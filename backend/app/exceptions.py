@@ -107,3 +107,53 @@ class InsufficientTextContentError(DocumentValidationError):
             status_code=422,
             details=details,
         )
+
+
+class InvalidJobDescriptionError(DocumentValidationError):
+    """Raised when the submitted job description is empty or too short."""
+
+    def __init__(
+        self,
+        message: str = "The job description is empty or too short. Please provide a substantive description of at least 50 characters.",
+        details: Optional[Any] = None,
+    ) -> None:
+        super().__init__(
+            code=ErrorCode.INVALID_JOB_DESCRIPTION,
+            message=message,
+            status_code=400,
+            details=details,
+        )
+
+
+class AiProviderError(DocumentValidationError):
+    """Raised when the AI model provider (Gemini) encounters rate limits, timeouts, or failure."""
+
+    def __init__(
+        self,
+        message: str = "An error occurred while communicating with the AI customization provider.",
+        status_code: int = 502,
+        details: Optional[Any] = None,
+    ) -> None:
+        super().__init__(
+            code=ErrorCode.AI_PROVIDER_ERROR,
+            message=message,
+            status_code=status_code,
+            details=details,
+        )
+
+
+class AiFactualityRejectedError(DocumentValidationError):
+    """Raised when tailored output fails critical factuality checks."""
+
+    def __init__(
+        self,
+        message: str = "The customized resume introduced unverifiable claims that could not be reconciled with the original document.",
+        details: Optional[Any] = None,
+    ) -> None:
+        super().__init__(
+            code=ErrorCode.AI_FACTUALITY_REJECTED,
+            message=message,
+            status_code=422,
+            details=details,
+        )
+

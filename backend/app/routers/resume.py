@@ -11,11 +11,13 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from app.config import Settings, get_settings
 from app.exceptions import FileTooLargeError, InvalidFileTypeError
+from app.schemas.api import CustomizeResponse
 from app.schemas.resume import ResumeParseResponse
+from app.services.customization_service import customize_resume
 from app.services.document_parser import extract_document_text
 from app.services.file_validator import validate_file
 
@@ -82,3 +84,56 @@ async def parse_resume_document(
         word_count=parse_result.word_count,
         raw_text=parse_result.raw_text,
     )
+
+
+@router.post(
+    "/customize",
+    response_model=CustomizeResponse,
+    summary="Customize resume for target job description (Documented alias)",
+    description=(
+        "Uploads a PDF (.pdf) or Word (.docx) resume along with a job description, "
+        "customizes experience bullets with factuality safeguards, and calculates "
+        "a deterministic match score."
+    ),
+)
+async def customize_resume_endpoint(
+    file: UploadFile = File(..., description="Resume document in PDF or DOCX format"),
+    job_description: str = Form(..., description="Target job description text"),
+    settings: Settings = Depends(get_settings),
+) -> CustomizeResponse:
+    """Documented alias route for POST /api/v1/customize."""
+    return await customize_resume_handler(file=file, job_description=job_description, settings=settings)
+
+
+async def customize_resume_handler(
+    file: UploadFile,
+    job_description: str,
+    settings: Settings,
+) -> CustomizeResponse:
+    """Core handler for both canonical and alias customization routes."""
+    filename = file.filename or "unknown"
+    logger.info("Received resume customization request: filename=%s", filename)
+
+    # Stream read with size enforcement to prevent memory exhaustion
+    buffer = bytearray()
+    max_bytes = settings.max_file_size_bytes
+
+    while True:
+        chunk = await file.read(STREAM_CHUNK_SIZE)
+        if not chunk:
+            break
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise FileTooLargeError(
+                f"File size exceeds the maximum allowed limit of {settings.max_file_size_mb} MB."
+            )
+
+    content = bytes(buffer)
+
+    return customize_resume(
+        file_bytes=content,
+        filename=filename,
+        job_description=job_description,
+        settings=settings,
+    )
+

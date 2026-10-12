@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     # Application metadata
@@ -23,13 +24,26 @@ class Settings(BaseSettings):
 
     # AI provider — key is never returned by any endpoint
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.8-flash", alias="GEMINI_MODEL")
 
     # File upload and parsing limits
     max_file_size_mb: int = Field(default=5, alias="MAX_FILE_SIZE_MB")
     max_pages: int = Field(default=10, alias="MAX_PAGES")
     min_extracted_chars: int = Field(default=50, alias="MIN_EXTRACTED_CHARS")
     min_extracted_words: int = Field(default=10, alias="MIN_EXTRACTED_WORDS")
+    max_resume_chars: int = Field(default=30000, alias="MAX_RESUME_CHARS")
+
+    # Job description validation limits
+    min_job_description_chars: int = Field(default=50, alias="MIN_JOB_DESCRIPTION_CHARS")
+    min_job_description_words: int = Field(default=10, alias="MIN_JOB_DESCRIPTION_WORDS")
+    max_job_description_chars: int = Field(
+        default=15000,
+        validation_alias=Field(default=15000).alias or "MAX_JD_CHARS",
+        alias="MAX_JD_CHARS",
+    )
+
+    # Gemini provider timeout
+    gemini_timeout_seconds: float = Field(default=45.0, alias="LLM_TIMEOUT_SECONDS")
 
     # CORS — comma-separated list of allowed origins
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")

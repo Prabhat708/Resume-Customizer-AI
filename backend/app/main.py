@@ -7,14 +7,15 @@ Registers:
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.exceptions import DocumentValidationError
 from app.routers import health, resume
+from app.schemas.api import CustomizeResponse
 from app.schemas.error import ErrorCode, ErrorDetail, ErrorResponse
 
 settings = get_settings()
@@ -86,6 +87,23 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-# ── Routers ───────────────────────────────────────────────────────────────────
+# ── Routers & Endpoints ────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(resume.router, prefix="/api/v1/resume", tags=["resume"])
+
+
+# Canonical route used by frontend: POST /api/v1/customize
+@app.post(
+    "/api/v1/customize",
+    response_model=CustomizeResponse,
+    summary="Customize resume for target job description (Canonical route)",
+    tags=["customization"],
+)
+async def canonical_customize_resume(
+    file: UploadFile = File(..., description="Resume document in PDF or DOCX format"),
+    job_description: str = Form(..., description="Target job description text"),
+    settings: Settings = Depends(get_settings),
+) -> CustomizeResponse:
+    """Canonical route for resume customization."""
+    return await resume.customize_resume_handler(file=file, job_description=job_description, settings=settings)
+
