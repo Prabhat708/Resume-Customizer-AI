@@ -109,12 +109,8 @@ export default function Home() {
       const link = document.createElement("a");
       link.href = url;
 
-      // Extract privacy-conscious safe filename
-      const rawName = customizationResult.tailored_resume.contact_info.name || "";
-      const safePrefix =
-        rawName.replace(/[^a-zA-Z0-9]/g, "_").split("_").filter(Boolean)[0]?.toLowerCase() ||
-        "tailored";
-      link.download = `${safePrefix}_resume_tailored.pdf`;
+      // Deterministic privacy-conscious generic filename
+      link.download = "tailored_resume.pdf";
 
       document.body.appendChild(link);
       link.click();

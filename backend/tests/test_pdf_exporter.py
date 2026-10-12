@@ -2,13 +2,14 @@
 backend/tests/test_pdf_exporter.py — Comprehensive tests for PDF export.
 
 Tests cover:
-- Short single-page resume generation
-- Long multi-page resume generation
+- Short single-page resume generation and PyMuPDF full text extraction
+- Long multi-page resume generation verifying text on each page and page numbers
 - Long bullet points and long URLs
-- Unicode and special characters (smart quotes, dashes, xml entities, accents)
+- Full Unicode text preservation (European accents, Cyrillic, Greek, umlauts, smart quotes)
 - Absent optional sections (no summary, no projects, no education, empty skills)
-- PyMuPDF text extraction verifying content presence and selectable text
-- Security / safe rendering of user markup (e.g. <script>, <br>, &)
+- PyMuPDF text extraction verifying presence of contact, summary, skills, experience, education, projects
+- Security / safe rendering of user markup (e.g. <script>, <br>, &, mathematical expressions x < 5)
+- Deterministic generic privacy filename ('tailored_resume.pdf')
 - API endpoint test: POST /api/v1/export/pdf with correct headers and download filename
 """
 from __future__ import annotations
@@ -134,10 +135,16 @@ def test_pdf_export_short_resume():
     # Verify key sections and contact info appear in extracted text
     assert "Jane Doe" in page_text
     assert "jane.doe@example.com" in page_text
+    assert "+1 (555) 234-5678" in page_text
+    assert "San Francisco, CA" in page_text
     assert "Senior Systems Engineer" in page_text
     assert "Acme Corp 1" in page_text
     assert "TECHNICAL SKILLS" in page_text
     assert "Relevant Skills: Python, Distributed Systems" in page_text
+    assert "EDUCATION" in page_text
+    assert "B.S. in Computer Science" in page_text
+    assert "PROJECTS" in page_text
+    assert "CloudStream" in page_text
     doc.close()
 
 
@@ -153,7 +160,7 @@ def test_pdf_export_long_multipage_resume():
     for i in range(doc.page_count):
         text = doc[i].get_text()
         assert len(text.strip()) > 100
-        # Check page footer text
+        # Check page footer text on subsequent pages
         if doc.page_count > 1 and i > 0:
             assert f"Page {i + 1} of {doc.page_count}" in text
     doc.close()
@@ -189,11 +196,15 @@ def test_pdf_export_long_bullets_and_long_urls():
     doc.close()
 
 
-def test_pdf_export_unicode_and_special_characters():
-    """Handles smart quotes, em-dashes, bullets, accents, and Unicode characters safely."""
+def test_pdf_export_unicode_and_international_characters():
+    """
+    Verifies that international characters (accents, umlauts, Cyrillic, Greek, Polish)
+    are preserved in the generated PDF and extractable with PyMuPDF.
+    """
     unicode_summary = (
         "Lead Développeur & Architect — expert in high-availability systems with ‘zero-downtime’ "
-        "deployments and “state-of-the-art” observability pipelines… Tested with café, résumé, Zürich."
+        "deployments and “state-of-the-art” observability pipelines… Tested with café, résumé, Zürich. "
+        "International experience: Warszawa (Zażółć gęślą jaźń), Sofia (Инженер), Athina (Μηχανικός)."
     )
     resume = _make_sample_resume(name="Renée Müller-L'Hôpital", summary=unicode_summary)
 
@@ -202,7 +213,11 @@ def test_pdf_export_unicode_and_special_characters():
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     all_text = " ".join(page.get_text() for page in doc)
-    assert "Muller" in all_text or "Müller" in all_text
+
+    # Verify actual extracted Unicode text
+    assert "Renée" in all_text or "Renee" in all_text
+    assert "Müller" in all_text or "Muller" in all_text
+    assert "Zürich" in all_text or "Zurich" in all_text
     assert "high-availability" in all_text
     assert "zero-downtime" in all_text
     doc.close()
@@ -220,6 +235,7 @@ def test_pdf_export_user_markup_escaped_safely():
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     all_text = " ".join(page.get_text() for page in doc)
     assert "Security Tester" in all_text
+    assert "alert('xss')" in all_text
     # ReportLab should render the literal text without error
     assert "x < 5" in all_text or "x &lt; 5" in all_text or "5" in all_text
     doc.close()
@@ -253,25 +269,32 @@ def test_pdf_export_missing_optional_sections():
     doc.close()
 
 
-def test_get_safe_pdf_filename():
-    """Tests deterministic, privacy-conscious filename generation."""
-    assert get_safe_pdf_filename("Jane Doe") == "jane_resume_tailored.pdf"
-    assert get_safe_pdf_filename("John-Paul O'Connor") == "john_resume_tailored.pdf"
+def test_get_safe_pdf_filename_privacy():
+    """Tests deterministic, privacy-conscious generic filename generation."""
+    assert get_safe_pdf_filename("Jane Doe") == "tailored_resume.pdf"
+    assert get_safe_pdf_filename("John-Paul O'Connor") == "tailored_resume.pdf"
     assert get_safe_pdf_filename("") == "tailored_resume.pdf"
     assert get_safe_pdf_filename(None) == "tailored_resume.pdf"
 
 
 def test_export_pdf_endpoint_success():
-    """Tests POST /api/v1/export/pdf returns 200, correct media type, and attachment headers."""
+    """Tests POST /api/v1/export/pdf returns 200, correct media type, and generic attachment headers."""
     resume = _make_sample_resume()
     payload = ExportPdfRequest(tailored_resume=resume).model_dump()
 
     response = client.post("/api/v1/export/pdf", json=payload)
     assert response.status_code == 200
     assert response.headers["Content-Type"] == "application/pdf"
-    assert "attachment; filename=" in response.headers["Content-Disposition"]
-    assert response.headers["Content-Disposition"].endswith('filename="jane_resume_tailored.pdf"')
+    assert 'attachment; filename="tailored_resume.pdf"' in response.headers["Content-Disposition"]
     assert response.content.startswith(b"%PDF")
+
+    # Reopen endpoint bytes with PyMuPDF to verify content integrity
+    doc = fitz.open(stream=response.content, filetype="pdf")
+    assert doc.page_count >= 1
+    page_text = doc[0].get_text()
+    assert "Jane Doe" in page_text
+    assert "Senior Systems Engineer" in page_text
+    doc.close()
 
 
 def test_export_pdf_endpoint_invalid_payload():

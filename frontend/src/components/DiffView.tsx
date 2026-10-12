@@ -11,6 +11,8 @@ import {
   FileText,
   Layers,
   HelpCircle,
+  ArrowUpDown,
+  MinusCircle,
 } from "lucide-react";
 import {
   TailoredResume,
@@ -22,7 +24,6 @@ import {
 } from "@/types/api";
 
 interface DiffViewProps {
-  // Support both new dual-prop format and legacy single prop
   resume?: TailoredResume;
   tailoredResume?: TailoredResume;
   originalResume?: ParsedResume;
@@ -36,7 +37,7 @@ export function DiffView({
   missingRequirements = [],
 }: DiffViewProps) {
   const tailored = tailoredResumeProp || resume;
-  const [filterType, setFilterType] = useState<"all" | "reframed" | "warnings">("all");
+  const [filterType, setFilterType] = useState<"all" | "reframed" | "reordered" | "warnings">("all");
 
   if (!tailored) {
     return (
@@ -46,36 +47,89 @@ export function DiffView({
     );
   }
 
-  const allBullets: {
+  // 1. Process bullets with reordering and modification status per experience entry
+  interface ProcessedBulletItem {
     company: string;
     role: string;
     bullet: TailoredBullet;
+    currentIndex: number;
+    originalIndex: number;
     isIdentical: boolean;
-  }[] = [];
+    isReordered: boolean;
+  }
 
-  tailored.experience.forEach((exp) => {
-    exp.bullets.forEach((b) => {
+  const allBullets: ProcessedBulletItem[] = [];
+
+  // Track omitted bullets from original resume
+  interface OmittedBulletItem {
+    company: string;
+    role: string;
+    originalIndex: number;
+    text: string;
+  }
+  const omittedBullets: OmittedBulletItem[] = [];
+
+  tailored.experience.forEach((tailoredExp) => {
+    // Locate corresponding original experience entry by matching company/role
+    const origExp = originalResume?.experience?.find(
+      (oe) =>
+        oe.company.trim().toLowerCase() === tailoredExp.company.trim().toLowerCase() ||
+        oe.role.trim().toLowerCase() === tailoredExp.role.trim().toLowerCase()
+    );
+
+    const tailoredSourceIds = new Set<number>();
+
+    tailoredExp.bullets.forEach((b, idx) => {
       const isIdentical =
         b.original_text.trim().toLowerCase() === b.tailored_text.trim().toLowerCase();
+      const isReordered = b.source_bullet_id !== idx;
+      tailoredSourceIds.add(b.source_bullet_id);
+
       allBullets.push({
-        company: exp.company,
-        role: exp.role,
+        company: tailoredExp.company,
+        role: tailoredExp.role,
         bullet: b,
+        currentIndex: idx,
+        originalIndex: b.source_bullet_id,
         isIdentical,
+        isReordered,
       });
     });
+
+    // Check if any original bullets for this entry were omitted/consolidated
+    if (origExp && origExp.bullets) {
+      origExp.bullets.forEach((ob, oIdx) => {
+        const bulletId = typeof ob.bullet_id === "number" ? ob.bullet_id : oIdx;
+        if (!tailoredSourceIds.has(bulletId)) {
+          omittedBullets.push({
+            company: origExp.company,
+            role: origExp.role,
+            originalIndex: bulletId,
+            text: ob.text,
+          });
+        }
+      });
+    }
   });
 
   const auditWarnings = tailored.audit_warnings || [];
   const reframedCount = allBullets.filter((b) => !b.isIdentical).length;
   const unchangedCount = allBullets.filter((b) => b.isIdentical).length;
+  const reorderedCount = allBullets.filter((b) => b.isReordered).length;
 
   const filteredBullets = allBullets.filter((item) => {
     if (filterType === "warnings") {
-      return auditWarnings.some((w) => w.bullet_ref.includes(item.company) || w.original_text === item.bullet.original_text);
+      return auditWarnings.some(
+        (w) =>
+          w.bullet_ref.includes(item.company) ||
+          w.original_text.trim() === item.bullet.original_text.trim()
+      );
     }
     if (filterType === "reframed") {
       return !item.isIdentical;
+    }
+    if (filterType === "reordered") {
+      return item.isReordered;
     }
     return true;
   });
@@ -114,7 +168,8 @@ export function DiffView({
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold">
-              {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved)
+              {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved
+              {reorderedCount > 0 ? `, ${reorderedCount} Reordered` : ""})
             </span>
             {auditWarnings.length > 0 ? (
               <span className="px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-semibold flex items-center space-x-1">
@@ -323,7 +378,7 @@ export function DiffView({
         </div>
       )}
 
-      {/* 5. Unsupported Job Requirements Alert (if any) */}
+      {/* 5. Unsupported Job Requirements Alert */}
       {missingRequirements.length > 0 && (
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs space-y-2">
           <div className="flex items-center space-x-2 text-slate-800 font-bold">
@@ -355,7 +410,7 @@ export function DiffView({
           </h4>
 
           {/* Filter Pills */}
-          <div className="flex items-center space-x-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <Filter className="h-3.5 w-3.5 text-slate-400 mr-1" />
             <button
               type="button"
@@ -379,6 +434,19 @@ export function DiffView({
             >
               Reframed ({reframedCount})
             </button>
+            {reorderedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterType("reordered")}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  filterType === "reordered"
+                    ? "bg-purple-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Reordered ({reorderedCount})
+              </button>
+            )}
             {auditWarnings.length > 0 && (
               <button
                 type="button"
@@ -398,7 +466,8 @@ export function DiffView({
         {/* Bullets List */}
         <div className="space-y-4">
           {filteredBullets.map((item, idx) => {
-            const { company, role, bullet, isIdentical } = item;
+            const { company, role, bullet, isIdentical, isReordered, originalIndex, currentIndex } =
+              item;
 
             return (
               <div
@@ -416,6 +485,12 @@ export function DiffView({
                     <span className="font-mono text-[10px] text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
                       Source Bullet #{bullet.source_bullet_id}
                     </span>
+                    {isReordered && (
+                      <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded flex items-center space-x-1">
+                        <ArrowUpDown className="h-3 w-3 inline" />
+                        <span>Reordered ({originalIndex + 1} &rarr; {currentIndex + 1})</span>
+                      </span>
+                    )}
                     <span
                       className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
                         isIdentical
@@ -433,7 +508,7 @@ export function DiffView({
                   {/* Original Bullet */}
                   <div className="space-y-1">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Original Source Claim
+                      Original Source Claim (Position #{originalIndex + 1})
                     </span>
                     <div className="p-3 bg-slate-50 rounded-lg text-slate-700 border border-slate-200 leading-relaxed min-h-[60px]">
                       {bullet.original_text}
@@ -444,7 +519,7 @@ export function DiffView({
                   <div className="space-y-1">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 flex items-center space-x-1">
                       <Sparkles className="h-3 w-3" />
-                      <span>Customized Bullet</span>
+                      <span>Customized Bullet (Position #{currentIndex + 1})</span>
                     </span>
                     <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[60px]">
                       {bullet.tailored_text}
@@ -465,6 +540,35 @@ export function DiffView({
             );
           })}
         </div>
+
+        {/* 7. Omitted Original Bullets (if any original bullets were not carried over) */}
+        {omittedBullets.length > 0 && (
+          <div className="mt-6 bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-3">
+            <div className="flex items-center space-x-2 text-slate-800">
+              <MinusCircle className="h-4 w-4 text-slate-500" />
+              <h4 className="text-sm font-bold">
+                Original Bullets Not Included in Customized Version ({omittedBullets.length})
+              </h4>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              These points from your original resume were deprioritized or consolidated to prioritize
+              target job requirements within standard resume length constraints:
+            </p>
+            <div className="space-y-2">
+              {omittedBullets.map((ob, idx) => (
+                <div
+                  key={idx}
+                  className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 space-y-1"
+                >
+                  <div className="font-semibold text-slate-600 text-[11px]">
+                    {ob.company} &bull; {ob.role} &bull; Original Position #{ob.originalIndex + 1}
+                  </div>
+                  <div className="text-slate-600">{ob.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

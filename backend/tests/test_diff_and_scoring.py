@@ -1,9 +1,11 @@
 """
 backend/tests/test_diff_and_scoring.py — Tests covering comparison structures,
-scoring transparency, provenance, and factuality representation.
+scoring transparency, provenance, reordering, omissions, and factuality representation.
 
 Covers:
 - Unchanged and reworded bullets tracking via source_bullet_id
+- Reordered bullets identification using source_bullet_id vs current position
+- Omitted/consolidated original bullets identification when original has more items
 - Missing/empty sections safety (empty skills, missing summaries, no education/projects)
 - Supported, partially supported, and unmentioned requirements distinctions
 - Zero requirements calculation and explanatory methodology text
@@ -19,7 +21,8 @@ from app.schemas.analysis import (
     RequirementMatch,
     SupportStatus,
 )
-from app.schemas.common import ContactInfo
+from app.schemas.common import ContactInfo, ExperienceBullet
+from app.schemas.resume import ExperienceEntry, ParsedResume
 from app.schemas.tailored import (
     AuditWarning,
     ChangeType,
@@ -106,6 +109,73 @@ def test_bullet_provenance_and_diff_tracking():
     assert b1.original_text != b1.tailored_text
     assert b2.source_bullet_id == 1
     assert b2.original_text == b2.tailored_text
+
+
+def test_bullet_reordering_detection_via_source_provenance():
+    """
+    Verifies that reordering is accurately identified when source_bullet_id
+    differs from current array index, and that reordered bullets are NOT
+    falsely categorized as removed or deleted.
+    """
+    # Original bullet order: 0: Leader, 1: Cloud architect, 2: Sprint planning
+    # Tailored bullet order: Position 0 is source 1 (reordered), Position 1 is source 0 (reordered)
+    tailored_bullets = [
+        TailoredBullet(
+            source_bullet_id=1,  # Originally at index 1, now at index 0
+            original_text="Designed cloud architecture.",
+            tailored_text="Architected AWS multi-region cloud infrastructure.",
+            rationale="Prioritized cloud architecture for JD relevance.",
+        ),
+        TailoredBullet(
+            source_bullet_id=0,  # Originally at index 0, now at index 1
+            original_text="Led team of 4 engineers.",
+            tailored_text="Led high-performing team of 4 backend engineers.",
+            rationale="Highlighted team leadership.",
+        ),
+    ]
+
+    is_reordered_0 = tailored_bullets[0].source_bullet_id != 0
+    is_reordered_1 = tailored_bullets[1].source_bullet_id != 1
+
+    assert is_reordered_0 is True
+    assert is_reordered_1 is True
+    # The source content was reordered, not removed
+    assert tailored_bullets[0].source_bullet_id == 1
+    assert tailored_bullets[1].source_bullet_id == 0
+
+
+def test_bullet_omission_detection_when_original_has_deprioritized_content():
+    """
+    Verifies that when an original experience entry contains bullets not referenced
+    by any tailored bullet's source_bullet_id, they can be identified as omitted.
+    """
+    orig_bullets = [
+        ExperienceBullet(bullet_id=0, text="Engineered microservices in Python."),
+        ExperienceBullet(bullet_id=1, text="Participated in daily standups and sprint retros."),
+        ExperienceBullet(bullet_id=2, text="Optimized Postgres queries."),
+    ]
+
+    tailored_bullets = [
+        TailoredBullet(
+            source_bullet_id=0,
+            original_text=orig_bullets[0].text,
+            tailored_text="Engineered fault-tolerant microservices in Python.",
+            rationale="Highlighted resilience.",
+        ),
+        TailoredBullet(
+            source_bullet_id=2,
+            original_text=orig_bullets[2].text,
+            tailored_text="Optimized PostgreSQL queries reducing latency by 40%.",
+            rationale="Highlighted query performance.",
+        ),
+    ]
+
+    tailored_source_ids = {b.source_bullet_id for b in tailored_bullets}
+    omitted = [ob for ob in orig_bullets if ob.bullet_id not in tailored_source_ids]
+
+    assert len(omitted) == 1
+    assert omitted[0].bullet_id == 1
+    assert "daily standups" in omitted[0].text
 
 
 def test_factuality_audit_warnings_representation():

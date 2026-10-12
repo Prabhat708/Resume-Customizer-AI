@@ -5,15 +5,18 @@ Key Design & ATS Standards:
 - Built strictly with ReportLab Platypus (SimpleDocTemplate, Paragraph, Spacer, Table).
 - Generates directly from the validated TailoredResume Pydantic schema (never HTML scraping).
 - Single-column linear reading order for ATS parsers and text extractors.
-- Standard Type 1 fonts (Helvetica, Helvetica-Bold) for universal ATS compatibility and selectable text.
+- Embedded TrueType Unicode font family (Arial/SegoeUI) when available with Helvetica fallback.
+- TrueType embedding preserves international characters (accents, umlauts, Cyrillic, Greek, Polish)
+  in extracted text rather than replacing them with lossy ASCII approximations.
 - Comprehensive XML character escaping (prevents ReportLab XML markup injection or parser crashes).
-- Robust Unicode character normalization (smart quotes, dashes, bullets, accents).
 - Dynamic page layout supporting multi-page resumes without clipping or overlapping.
 - Handles missing optional sections cleanly (no orphan headers).
+- Generates deterministic, privacy-conscious filenames.
 """
 from __future__ import annotations
 
 import io
+import os
 import re
 import unicodedata
 from xml.sax.saxutils import escape as sax_escape
@@ -24,6 +27,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     HRFlowable,
@@ -36,6 +41,102 @@ from reportlab.platypus import (
 )
 
 from app.schemas.tailored import TailoredResume
+
+
+# ── TrueType Unicode Font Setup ───────────────────────────────────────────────
+
+_UNICODE_FONT_AVAILABLE = False
+_REGULAR_FONT = "Helvetica"
+_BOLD_FONT = "Helvetica-Bold"
+_ITALIC_FONT = "Helvetica-Oblique"
+_BOLD_ITALIC_FONT = "Helvetica-Bold"
+
+
+def _initialize_fonts() -> None:
+    """
+    Attempts to register TrueType fonts with full Unicode support (e.g. Arial or Segoe UI)
+    so European, Cyrillic, Greek, and Latin-extended characters are embedded directly
+    and fully preserved upon PDF text extraction.
+    Falls back gracefully to Type-1 Helvetica if system TrueType fonts are not found.
+    """
+    global _UNICODE_FONT_AVAILABLE, _REGULAR_FONT, _BOLD_FONT, _ITALIC_FONT, _BOLD_ITALIC_FONT
+
+    if _UNICODE_FONT_AVAILABLE:
+        return
+
+    # Check candidate system font directories (Windows, Linux, macOS)
+    candidates = []
+    windir = os.environ.get("WINDIR", r"C:\Windows")
+    win_fonts = os.path.join(windir, "Fonts")
+
+    candidates.append(
+        (
+            "ResumeFont",
+            os.path.join(win_fonts, "arial.ttf"),
+            os.path.join(win_fonts, "arialbd.ttf"),
+            os.path.join(win_fonts, "ariali.ttf"),
+            os.path.join(win_fonts, "arialbi.ttf"),
+        )
+    )
+    candidates.append(
+        (
+            "ResumeFont",
+            os.path.join(win_fonts, "segoeui.ttf"),
+            os.path.join(win_fonts, "segoeuib.ttf"),
+            os.path.join(win_fonts, "segoeuii.ttf"),
+            os.path.join(win_fonts, "segoeuiz.ttf"),
+        )
+    )
+    # Common Linux paths
+    candidates.append(
+        (
+            "ResumeFont",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+        )
+    )
+
+    for font_family, reg_p, bold_p, italic_p, bi_p in candidates:
+        if os.path.exists(reg_p) and os.path.exists(bold_p):
+            try:
+                pdfmetrics.registerFont(TTFont(f"{font_family}", reg_p, "utf-8"))
+                pdfmetrics.registerFont(TTFont(f"{font_family}-Bold", bold_p, "utf-8"))
+
+                has_italic = os.path.exists(italic_p)
+                has_bi = os.path.exists(bi_p)
+
+                if has_italic:
+                    pdfmetrics.registerFont(TTFont(f"{font_family}-Italic", italic_p, "utf-8"))
+                else:
+                    pdfmetrics.registerFont(TTFont(f"{font_family}-Italic", reg_p, "utf-8"))
+
+                if has_bi:
+                    pdfmetrics.registerFont(TTFont(f"{font_family}-BoldItalic", bi_p, "utf-8"))
+                else:
+                    pdfmetrics.registerFont(TTFont(f"{font_family}-BoldItalic", bold_p, "utf-8"))
+
+                pdfmetrics.registerFontFamily(
+                    font_family,
+                    normal=f"{font_family}",
+                    bold=f"{font_family}-Bold",
+                    italic=f"{font_family}-Italic",
+                    boldItalic=f"{font_family}-BoldItalic",
+                )
+
+                _UNICODE_FONT_AVAILABLE = True
+                _REGULAR_FONT = f"{font_family}"
+                _BOLD_FONT = f"{font_family}-Bold"
+                _ITALIC_FONT = f"{font_family}-Italic"
+                _BOLD_ITALIC_FONT = f"{font_family}-BoldItalic"
+                break
+            except Exception:
+                continue
+
+
+# Initialize font registration
+_initialize_fonts()
 
 
 # ── Character Normalization & Safe XML Escaping ──────────────────────────────
@@ -58,9 +159,9 @@ def _sanitize_and_escape(text: Optional[str]) -> str:
     """
     Safely sanitizes and escapes raw user text for ReportLab Paragraphs.
     
-    1. Replaces common typographical Unicode entities with Latin equivalents.
-    2. Decomposes/normalizes any remaining complex Unicode characters.
-    3. Replaces unencodable characters with safe ASCII approximations.
+    1. Replaces common typographical punctuation entities with clean equivalents.
+    2. If TrueType Unicode fonts are available, preserves international Unicode characters.
+    3. If running under Type-1 Helvetica fallback, normalizes characters to latin-1 / ascii.
     4. Escapes XML special characters (<, >, &).
     """
     if not text:
@@ -70,16 +171,14 @@ def _sanitize_and_escape(text: Optional[str]) -> str:
     for src, target in _CHAR_REPLACEMENTS.items():
         s = s.replace(src, target)
 
-    # Normalize unicode to avoid Helvetica Type-1 encoding exceptions
-    # Normalize to NFKD to separate accents, then encode to latin-1 or ascii
-    try:
-        s.encode("latin-1")
-    except UnicodeEncodeError:
-        # For characters beyond latin-1, attempt NFKD normalization
-        normalized = unicodedata.normalize("NFKD", s)
-        s = "".join(c for c in normalized if not unicodedata.combining(c))
-        # Final fallback: encode ascii with replacement
-        s = s.encode("ascii", errors="replace").decode("ascii")
+    if not _UNICODE_FONT_AVAILABLE:
+        # Fallback for pure Type-1 Helvetica
+        try:
+            s.encode("latin-1")
+        except UnicodeEncodeError:
+            normalized = unicodedata.normalize("NFKD", s)
+            s = "".join(c for c in normalized if not unicodedata.combining(c))
+            s = s.encode("ascii", errors="replace").decode("ascii")
 
     # SAX escape for XML safe rendering in ReportLab
     return sax_escape(s)
@@ -111,7 +210,7 @@ class NumberedCanvas(canvas.Canvas):
         # Only show page numbers if document spans more than 1 page
         if page_count > 1:
             self.saveState()
-            self.setFont("Helvetica", 8)
+            self.setFont(_REGULAR_FONT, 8)
             self.setFillColor(colors.HexColor("#64748B"))  # Slate-500
             page_text = f"Page {self._pageNumber} of {page_count}"
             self.drawRightString(letter[0] - 36, 20, page_text)
@@ -125,6 +224,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     Generate an ATS-optimized, high-fidelity PDF from the validated TailoredResume schema.
     Returns the raw PDF binary content as bytes.
     """
+    _initialize_fonts()
     buffer = io.BytesIO()
 
     # Geometry: Letter size, 0.5 in (36 pt) side margins, 0.5 in (36 pt) top/bottom
@@ -148,7 +248,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     name_style = ParagraphStyle(
         "ResumeName",
         parent=base_styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=_BOLD_FONT,
         fontSize=18,
         leading=22,
         alignment=TA_CENTER,
@@ -159,7 +259,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     contact_style = ParagraphStyle(
         "ResumeContact",
         parent=base_styles["Normal"],
-        fontName="Helvetica",
+        fontName=_REGULAR_FONT,
         fontSize=8.5,
         leading=11,
         alignment=TA_CENTER,
@@ -170,7 +270,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     section_heading_style = ParagraphStyle(
         "ResumeSectionHeading",
         parent=base_styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=_BOLD_FONT,
         fontSize=10.5,
         leading=13,
         textColor=colors.HexColor("#1E293B"),  # Slate-800
@@ -182,7 +282,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     body_style = ParagraphStyle(
         "ResumeBody",
         parent=base_styles["Normal"],
-        fontName="Helvetica",
+        fontName=_REGULAR_FONT,
         fontSize=8.5,
         leading=12,
         textColor=colors.HexColor("#1E293B"),
@@ -192,7 +292,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     bullet_style = ParagraphStyle(
         "ResumeBullet",
         parent=base_styles["Normal"],
-        fontName="Helvetica",
+        fontName=_REGULAR_FONT,
         fontSize=8.5,
         leading=11.5,
         textColor=colors.HexColor("#1E293B"),
@@ -204,7 +304,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     entry_title_style = ParagraphStyle(
         "ResumeEntryTitle",
         parent=base_styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=_BOLD_FONT,
         fontSize=9,
         leading=12,
         textColor=colors.HexColor("#0F172A"),
@@ -213,7 +313,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     entry_subtitle_style = ParagraphStyle(
         "ResumeEntrySubtitle",
         parent=base_styles["Normal"],
-        fontName="Helvetica-Oblique",
+        fontName=_ITALIC_FONT,
         fontSize=8.5,
         leading=11,
         textColor=colors.HexColor("#475569"),
@@ -222,7 +322,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
     entry_date_style = ParagraphStyle(
         "ResumeEntryDate",
         parent=base_styles["Normal"],
-        fontName="Helvetica",
+        fontName=_REGULAR_FONT,
         fontSize=8.5,
         leading=11,
         alignment=TA_LEFT,
@@ -313,7 +413,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             left_p = Paragraph(f"<b>{role_text}</b> — <i>{comp_text}</i>", entry_title_style)
             right_p = Paragraph(date_text, entry_date_style)
 
-            # Two columns: ~75% and 25%
+            # Two columns: ~72% and 28%
             col1_w = content_width * 0.72
             col2_w = content_width * 0.28
             header_table = Table([[left_p, right_p]], colWidths=[col1_w, col2_w])
@@ -334,7 +434,6 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             # Bullets
             if exp.bullets:
                 for b in exp.bullets:
-                    # Use tailored text as the customized bullet
                     bullet_text = _sanitize_and_escape(b.tailored_text)
                     exp_elements.append(
                         Paragraph(f"&bull;&nbsp;&nbsp;{bullet_text}", bullet_style)
@@ -414,17 +513,8 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
 
 def get_safe_pdf_filename(name: Optional[str] = None) -> str:
     """
-    Returns a deterministic, privacy-conscious filename for the PDF attachment.
-    Does not expose sensitive personal info, phone numbers, or arbitrary paths.
+    Returns a deterministic, privacy-conscious generic filename for the PDF attachment.
+    Standardized to 'tailored_resume.pdf' to prevent leaking candidate identity,
+    contact information, or sensitive filesystem paths.
     """
-    if not name:
-        return "tailored_resume.pdf"
-
-    # Extract first name or alpha characters only
-    clean = re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_")
-    # Take at most the first token / 20 chars
-    parts = [p for p in clean.split("_") if p]
-    if parts:
-        prefix = parts[0].lower()[:20]
-        return f"{prefix}_resume_tailored.pdf"
     return "tailored_resume.pdf"
