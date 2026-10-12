@@ -116,6 +116,22 @@ def test_rounding_68_25_rounds_down_to_68():
     assert score == 68, f"Expected 68 (68.25% rounds down), got {score}"
 
 
+def test_rounding_68_4_rounds_down_to_68():
+    """
+    Exact 68.4% ratio:
+      171 explicit preferred + 79 not_mentioned preferred:
+      achieved = 171 × 1.0 = 171
+      possible = 250 × 1.0 = 250
+      171 / 250 = 0.684 = 68.4% → ROUND_HALF_UP → 68
+    """
+    requirements = (
+        [_req(ImportanceLevel.PREFERRED, SupportStatus.EXPLICITLY_SUPPORTED)] * 171
+        + [_req(ImportanceLevel.PREFERRED, SupportStatus.NOT_MENTIONED)] * 79
+    )
+    score = calculate_match_score(requirements)
+    assert score == 68, f"Expected 68 (68.4% rounds down), got {score}"
+
+
 # ── Test 3: Zero-requirement edge case ───────────────────────────────────────
 def test_zero_requirements_returns_zero_not_error():
     """Empty requirement list must return 0, not raise ZeroDivisionError."""
