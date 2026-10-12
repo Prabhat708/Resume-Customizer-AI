@@ -8,11 +8,13 @@ Registers:
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.routers import health
+from app.exceptions import DocumentValidationError
+from app.routers import health, resume
 from app.schemas.error import ErrorCode, ErrorDetail, ErrorResponse
 
 settings = get_settings()
@@ -36,6 +38,40 @@ app.add_middleware(
 
 
 # ── Global exception handlers ─────────────────────────────────────────────────
+@app.exception_handler(DocumentValidationError)
+async def document_validation_exception_handler(
+    request: Request, exc: DocumentValidationError
+) -> JSONResponse:
+    """Standardized handler for domain validation and document parsing errors."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(
+            error=ErrorDetail(
+                code=exc.code,
+                message=exc.message,
+                details=exc.details,
+            )
+        ).model_dump(),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Standardized handler for request validation failures (e.g. missing file)."""
+    return JSONResponse(
+        status_code=400,
+        content=ErrorResponse(
+            error=ErrorDetail(
+                code=ErrorCode.INVALID_FILE_TYPE,
+                message="Invalid request payload or missing required file parameter.",
+                details=exc.errors(),
+            )
+        ).model_dump(),
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch-all handler that never leaks internal details to the client."""
@@ -52,3 +88,4 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
+app.include_router(resume.router, prefix="/api/v1/resume", tags=["resume"])

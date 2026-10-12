@@ -25,8 +25,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
-    # File upload limits
+    # File upload and parsing limits
     max_file_size_mb: int = Field(default=5, alias="MAX_FILE_SIZE_MB")
+    max_pages: int = Field(default=10, alias="MAX_PAGES")
+    min_extracted_chars: int = Field(default=50, alias="MIN_EXTRACTED_CHARS")
+    min_extracted_words: int = Field(default=10, alias="MIN_EXTRACTED_WORDS")
 
     # CORS — comma-separated list of allowed origins
     cors_origins_raw: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")

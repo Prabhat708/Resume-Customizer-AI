@@ -60,3 +60,6 @@ Thumbs.db
 *.swo
 .vscode/settings.json
 .idea/
+
+# ─── Planning & Docs ──────────────────────────────────────────────────────────
+plan/

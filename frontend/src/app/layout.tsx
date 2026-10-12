@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Resume Customizer — Factuality-Preserved Tailoring",
+  title: "ResumeCraft — Professional AI Resume Customizer",
   description:
     "Tailor your resume to job descriptions with explainable match analytics, bullet provenance, and zero fabricated claims.",
 };

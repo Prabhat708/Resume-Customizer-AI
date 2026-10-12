@@ -27,3 +27,14 @@ class ParsedResume(BaseModel):
     education: List[EducationEntry] = Field(default_factory=list)
     projects: List[ProjectEntry] = Field(default_factory=list)
     raw_text: str = Field(..., description="Full verbatim extracted text for factuality auditing")
+
+
+class ResumeParseResponse(BaseModel):
+    """Diagnostic response model for POST /api/v1/resume/parse."""
+    filename: str
+    file_type: str
+    page_count: int
+    char_count: int
+    word_count: int
+    raw_text: str
+
