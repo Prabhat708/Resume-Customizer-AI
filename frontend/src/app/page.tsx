@@ -9,6 +9,7 @@ import {
   GitCompare,
   Info,
   Printer,
+  Download,
 } from "lucide-react";
 import { Header } from "@/components/Header";
 import { JobDescriptionInput } from "@/components/JobDescriptionInput";
@@ -107,19 +108,30 @@ export default function Home() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      const candidateName =
-        customizationResult.tailored_resume.contact_info.name.replace(/[^a-zA-Z0-9]/g, "_") || "Tailored";
-      link.download = `${candidateName}_ResumeCraft_Customized.pdf`;
+
+      // Extract privacy-conscious safe filename
+      const rawName = customizationResult.tailored_resume.contact_info.name || "";
+      const safePrefix =
+        rawName.replace(/[^a-zA-Z0-9]/g, "_").split("_").filter(Boolean)[0]?.toLowerCase() ||
+        "tailored";
+      link.download = `${safePrefix}_resume_tailored.pdf`;
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch {
-      // Clearly communicate that server-side export is unavailable and browser print is used
-      setPdfNotice(
-        "Server-side PDF export is not implemented. Opening your browser's Print dialog to Print / Save as PDF."
-      );
-      window.print();
+      setPdfNotice("ATS-formatted PDF exported and downloaded successfully.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : "Server-side PDF generation failed. Please try again.";
+      setErrorState({
+        code: "EXPORT_FAILED",
+        message: `PDF Download Error: ${message}`,
+      });
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -262,19 +274,28 @@ export default function Home() {
                 <span>Edit Inputs / New Customization</span>
               </button>
 
-              <div className="flex items-center space-x-3">
-                <span className="text-xs text-slate-500 hidden sm:inline">
-                  Score: <strong className="text-slate-800">{customizationResult.match_analysis.estimated_score}%</strong>
+              <div className="flex items-center space-x-2.5">
+                <span className="text-xs text-slate-500 hidden sm:inline mr-1">
+                  Evidence Score: <strong className="text-slate-800">{customizationResult.match_analysis.estimated_score}%</strong>
                 </span>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                  aria-label="Open browser print dialog"
+                >
+                  <Printer className="h-3.5 w-3.5 text-slate-600" />
+                  <span className="hidden md:inline">Print View</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleDownloadPdf}
                   disabled={isDownloadingPdf}
                   className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all active:scale-[0.99] cursor-pointer"
-                  aria-label="Print or Save resume as PDF"
+                  aria-label="Download ATS-formatted resume PDF"
                 >
-                  <Printer className="h-3.5 w-3.5" />
-                  <span>{isDownloadingPdf ? "Processing..." : "Print / Save as PDF"}</span>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{isDownloadingPdf ? "Generating PDF..." : "Download ATS PDF"}</span>
                 </button>
               </div>
             </div>
@@ -359,7 +380,11 @@ export default function Home() {
               )}
 
               {activeTab === "diff" && (
-                <DiffView resume={customizationResult.tailored_resume} />
+                <DiffView
+                  tailoredResume={customizationResult.tailored_resume}
+                  originalResume={customizationResult.original_resume}
+                  missingRequirements={customizationResult.match_analysis.missing_requirements}
+                />
               )}
             </div>
           </div>

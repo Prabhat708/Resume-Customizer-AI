@@ -1,28 +1,103 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowRight, AlertTriangle, CheckCircle2, ShieldCheck, Sparkles, Filter } from "lucide-react";
-import { TailoredResume, TailoredBullet, AuditWarning, TailingChange } from "@/types/api";
+import {
+  ArrowRight,
+  AlertTriangle,
+  CheckCircle2,
+  ShieldCheck,
+  Sparkles,
+  Filter,
+  FileText,
+  Layers,
+  HelpCircle,
+} from "lucide-react";
+import {
+  TailoredResume,
+  TailoredBullet,
+  AuditWarning,
+  TailingChange,
+  ParsedResume,
+  MissingRequirement,
+} from "@/types/api";
 
 interface DiffViewProps {
-  resume: TailoredResume;
+  // Support both new dual-prop format and legacy single prop
+  resume?: TailoredResume;
+  tailoredResume?: TailoredResume;
+  originalResume?: ParsedResume;
+  missingRequirements?: MissingRequirement[];
 }
 
-export function DiffView({ resume }: DiffViewProps) {
-  const [filterType, setFilterType] = useState<"all" | "warnings">("all");
+export function DiffView({
+  resume,
+  tailoredResume: tailoredResumeProp,
+  originalResume,
+  missingRequirements = [],
+}: DiffViewProps) {
+  const tailored = tailoredResumeProp || resume;
+  const [filterType, setFilterType] = useState<"all" | "reframed" | "warnings">("all");
 
-  const allBullets: { company: string; role: string; bullet: TailoredBullet }[] = [];
-  resume.experience.forEach((exp) => {
+  if (!tailored) {
+    return (
+      <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-500 text-sm">
+        No customized resume data available for comparison.
+      </div>
+    );
+  }
+
+  const allBullets: {
+    company: string;
+    role: string;
+    bullet: TailoredBullet;
+    isIdentical: boolean;
+  }[] = [];
+
+  tailored.experience.forEach((exp) => {
     exp.bullets.forEach((b) => {
-      allBullets.push({ company: exp.company, role: exp.role, bullet: b });
+      const isIdentical =
+        b.original_text.trim().toLowerCase() === b.tailored_text.trim().toLowerCase();
+      allBullets.push({
+        company: exp.company,
+        role: exp.role,
+        bullet: b,
+        isIdentical,
+      });
     });
   });
 
-  const auditWarnings = resume.audit_warnings || [];
+  const auditWarnings = tailored.audit_warnings || [];
+  const reframedCount = allBullets.filter((b) => !b.isIdentical).length;
+  const unchangedCount = allBullets.filter((b) => b.isIdentical).length;
+
+  const filteredBullets = allBullets.filter((item) => {
+    if (filterType === "warnings") {
+      return auditWarnings.some((w) => w.bullet_ref.includes(item.company) || w.original_text === item.bullet.original_text);
+    }
+    if (filterType === "reframed") {
+      return !item.isIdentical;
+    }
+    return true;
+  });
+
+  // Summary comparison
+  const origSummary = originalResume?.summary?.trim() || "";
+  const tailoredSummary = tailored.summary?.trim() || "";
+  const hasSummaryDiff = origSummary !== "" || tailoredSummary !== "";
+  const isSummaryIdentical =
+    origSummary !== "" && tailoredSummary !== "" && origSummary === tailoredSummary;
+
+  // Skills comparison
+  const originalSkills = originalResume?.skills || [];
+  const relevantSkills = tailored.skills.retained_relevant || [];
+  const otherSkills = tailored.skills.retained_other || [];
+  const omittedSkills = originalSkills.filter(
+    (s) => !relevantSkills.includes(s) && !otherSkills.includes(s)
+  );
 
   return (
     <div className="space-y-6">
-      {/* Overview Card */}
+      {/* 1. Factuality & Provenance Overview Card */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -30,38 +105,52 @@ export function DiffView({ resume }: DiffViewProps) {
               <ShieldCheck className="h-5 w-5 text-indigo-600" />
               <span>Factuality Provenance &amp; Diff Comparison</span>
             </h3>
-            <p className="text-xs text-slate-600 mt-1 max-w-2xl">
-              Inspect how original experience bullets were reframed to align with target qualifications. Every tailored bullet traces back to an immutable original claim.
+            <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
+              Side-by-side verification of original candidate claims against customized phrasing.
+              AI customization reframes verified achievements to match job description keywords
+              without inventing ungrounded metrics.
             </p>
           </div>
 
-          <div className="flex items-center space-x-3 text-xs">
-            <span className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 font-semibold">
-              {allBullets.length} Tracked Bullets
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold">
+              {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved)
             </span>
             {auditWarnings.length > 0 ? (
-              <span className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-semibold flex items-center space-x-1">
+              <span className="px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-semibold flex items-center space-x-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mr-1" />
-                <span>{auditWarnings.length} Flagged</span>
+                <span>{auditWarnings.length} Requires Review</span>
               </span>
             ) : (
-              <span className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold flex items-center space-x-1">
+              <span className="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold flex items-center space-x-1">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mr-1" />
-                <span>Zero Hallucinations</span>
+                <span>Grounding Verified</span>
               </span>
             )}
           </div>
         </div>
 
+        {/* Factuality Boundary Disclaimer */}
+        <div className="mt-4 p-3 bg-amber-50/70 rounded-lg border border-amber-200/80 text-[11px] text-amber-900 flex items-start space-x-2">
+          <HelpCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <strong className="font-semibold">Candidate Verification Required:</strong> AI-customized
+            bullet points are derived directly from your uploaded resume. However, generated text
+            is not automatically verified as factually true simply because it was produced by AI.
+            Please review all reframed phrasing before submitting.
+          </div>
+        </div>
+
         {/* Tailoring Changes Summary */}
-        {resume.tailoring_changes && resume.tailoring_changes.length > 0 && (
+        {tailored.tailoring_changes && tailored.tailoring_changes.length > 0 && (
           <div className="mt-5 pt-4 border-t border-slate-100">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              Summary of Modifications
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center space-x-1.5">
+              <Layers className="h-3.5 w-3.5 text-slate-400" />
+              <span>Section Modification Rationale</span>
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {resume.tailoring_changes.map((change: TailingChange, idx: number) => (
-                <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-150 text-xs">
+              {tailored.tailoring_changes.map((change: TailingChange, idx: number) => (
+                <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-semibold text-slate-800">{change.section}</span>
                     <span
@@ -84,32 +173,37 @@ export function DiffView({ resume }: DiffViewProps) {
         )}
       </div>
 
-      {/* Audit Warnings Banner */}
+      {/* 2. Audit Warnings Banner */}
       {auditWarnings.length > 0 && (
-        <div className="bg-amber-50/80 rounded-xl border border-amber-200 p-5 shadow-xs space-y-3">
-          <div className="flex items-center space-x-2 text-amber-900">
+        <div className="bg-amber-50/90 rounded-xl border border-amber-300 p-5 shadow-xs space-y-3">
+          <div className="flex items-center space-x-2 text-amber-950">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
             <h4 className="text-sm font-bold">
-              Verification Notice: Claims Flagged for Candidate Review ({auditWarnings.length})
+              Auditor Notice: Ambiguous or High-Impact Phrasing Flagged ({auditWarnings.length})
             </h4>
           </div>
-          <p className="text-xs text-amber-800">
-            The automated auditor flagged ambiguous phrasing or unconfirmed metrics. Please verify that the customized statements accurately reflect your accomplishments.
+          <p className="text-xs text-amber-800 leading-relaxed">
+            The factuality auditor detected phrasing or metrics that may introduce unconfirmed scope.
+            Verify that these statements accurately describe your past experience:
           </p>
 
           <div className="space-y-2 mt-2">
             {auditWarnings.map((warn: AuditWarning, idx: number) => (
-              <div key={idx} className="bg-white rounded-lg p-3 border border-amber-200 text-xs space-y-1">
-                <div className="flex items-center justify-between font-semibold text-slate-800">
+              <div key={idx} className="bg-white rounded-lg p-3 border border-amber-200 text-xs space-y-1.5 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between font-semibold text-slate-800 gap-1">
                   <span>{warn.bullet_ref}</span>
-                  <span className="text-amber-700 font-normal italic">{warn.concern}</span>
+                  <span className="text-amber-800 text-[11px] font-medium bg-amber-100/60 px-2 py-0.5 rounded">
+                    {warn.concern}
+                  </span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1 text-[11px]">
-                  <div className="text-slate-500 bg-slate-50 p-1.5 rounded">
-                    <strong>Original:</strong> {warn.original_text}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1 text-[11px]">
+                  <div className="text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">
+                    <strong className="text-slate-700 block mb-0.5">Original Claim:</strong>
+                    {warn.original_text}
                   </div>
-                  <div className="text-indigo-700 bg-indigo-50/50 p-1.5 rounded">
-                    <strong>Tailored:</strong> {warn.tailored_text}
+                  <div className="text-indigo-950 bg-indigo-50/60 p-2 rounded border border-indigo-200">
+                    <strong className="text-indigo-800 block mb-0.5">Tailored Phrasing:</strong>
+                    {warn.tailored_text}
                   </div>
                 </div>
               </div>
@@ -118,105 +212,259 @@ export function DiffView({ resume }: DiffViewProps) {
         </div>
       )}
 
-      {/* Filter Options */}
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-bold text-slate-900">
-          Side-by-Side Bullet Comparison ({allBullets.length})
-        </h4>
+      {/* 3. Professional Summary Diff (if either original or tailored exists) */}
+      {hasSummaryDiff && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <FileText className="h-4 w-4 text-indigo-600" />
+              <span>Professional Summary Diff</span>
+            </h4>
+            <span
+              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                isSummaryIdentical
+                  ? "bg-slate-100 text-slate-600"
+                  : "bg-indigo-100 text-indigo-700"
+              }`}
+            >
+              {isSummaryIdentical ? "Unchanged" : origSummary ? "Reframed" : "Generated"}
+            </span>
+          </div>
 
-        {auditWarnings.length > 0 && (
-          <div className="flex items-center space-x-2 text-xs">
-            <Filter className="h-3.5 w-3.5 text-slate-400" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            {/* Original Summary */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Original Summary
+              </span>
+              <div className="p-3 bg-slate-50 rounded-lg text-slate-700 border border-slate-200 leading-relaxed min-h-[50px]">
+                {origSummary || <em className="text-slate-400">None provided in original resume</em>}
+              </div>
+            </div>
+
+            {/* Tailored Summary */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 flex items-center space-x-1">
+                <Sparkles className="h-3 w-3" />
+                <span>Tailored Summary</span>
+              </span>
+              <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[50px]">
+                {tailoredSummary || <em className="text-slate-400">None specified</em>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Skills Categorization & Retention */}
+      {(relevantSkills.length > 0 || otherSkills.length > 0 || originalSkills.length > 0) && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
+          <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+            <Layers className="h-4 w-4 text-indigo-600" />
+            <span>Skills Partitioning &amp; Relevance Alignment</span>
+          </h4>
+          <p className="text-xs text-slate-500">
+            Skills are partitioned into target-role matches and background skills. No unverified
+            technologies from the job description are artificially added.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+            {/* Target Role Relevant Skills */}
+            <div className="bg-indigo-50/50 p-3.5 rounded-lg border border-indigo-200 text-xs">
+              <span className="font-bold text-indigo-900 block mb-1.5 flex items-center justify-between">
+                <span>Target-Role Relevant Skills ({relevantSkills.length})</span>
+                <span className="text-[10px] uppercase tracking-wider bg-indigo-200/70 text-indigo-800 px-1.5 py-0.2 rounded font-bold">
+                  Highlighted
+                </span>
+              </span>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {relevantSkills.map((s, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-white text-indigo-900 border border-indigo-200 rounded font-medium text-[11px]"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Additional Candidate Skills */}
+            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs">
+              <span className="font-bold text-slate-800 block mb-1.5 flex items-center justify-between">
+                <span>Additional Candidate Skills ({otherSkills.length})</span>
+                <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-bold">
+                  Preserved
+                </span>
+              </span>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {otherSkills.length > 0 ? (
+                  otherSkills.map((s, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 bg-white text-slate-700 border border-slate-200 rounded text-[11px]"
+                    >
+                      {s}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-slate-400 italic text-[11px]">All verified skills aligned with target role</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {omittedSkills.length > 0 && (
+            <div className="pt-2 text-[11px] text-slate-500">
+              <strong className="text-slate-600">Omitted or deduplicated from final list:</strong>{" "}
+              {omittedSkills.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5. Unsupported Job Requirements Alert (if any) */}
+      {missingRequirements.length > 0 && (
+        <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs space-y-2">
+          <div className="flex items-center space-x-2 text-slate-800 font-bold">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <span>Job Requirements Not Supported in Source Resume ({missingRequirements.length})</span>
+          </div>
+          <p className="text-slate-600 text-[11px] leading-relaxed">
+            The target job description requested qualifications that were not found in your uploaded resume.
+            To preserve strict factuality, these have not been added to your tailored resume:
+          </p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {missingRequirements.map((mr, idx) => (
+              <span
+                key={idx}
+                className="px-2.5 py-1 bg-white border border-slate-200 rounded text-slate-700 text-[11px]"
+              >
+                {mr.requirement} ({mr.importance})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Bullets Diff List with Controls */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h4 className="text-sm font-bold text-slate-900">
+            Experience Bullets Side-by-Side Comparison ({allBullets.length})
+          </h4>
+
+          {/* Filter Pills */}
+          <div className="flex items-center space-x-1.5 text-xs">
+            <Filter className="h-3.5 w-3.5 text-slate-400 mr-1" />
             <button
               type="button"
               onClick={() => setFilterType("all")}
               className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                filterType === "all" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+                filterType === "all"
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              All Bullets
+              All ({allBullets.length})
             </button>
             <button
               type="button"
-              onClick={() => setFilterType("warnings")}
+              onClick={() => setFilterType("reframed")}
               className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                filterType === "warnings" ? "bg-amber-600 text-white" : "text-slate-600 hover:bg-slate-100"
+                filterType === "reframed"
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              Flagged Only ({auditWarnings.length})
+              Reframed ({reframedCount})
             </button>
+            {auditWarnings.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterType("warnings")}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  filterType === "warnings"
+                    ? "bg-amber-600 text-white"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                Warnings ({auditWarnings.length})
+              </button>
+            )}
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Bullet Diff Cards */}
-      <div className="space-y-4">
-        {allBullets.map((item, idx) => {
-          const { company, role, bullet } = item;
-          const isIdentical = bullet.original_text.trim() === bullet.tailored_text.trim();
+        {/* Bullets List */}
+        <div className="space-y-4">
+          {filteredBullets.map((item, idx) => {
+            const { company, role, bullet, isIdentical } = item;
 
-          return (
-            <div
-              key={idx}
-              className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all hover:border-slate-300"
-            >
-              <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-150 flex items-center justify-between text-xs">
-                <div className="font-semibold text-slate-800">
-                  <span>{company}</span>
-                  <span className="text-slate-400 mx-1.5">•</span>
-                  <span className="text-slate-600 font-normal">{role}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono text-[10px] text-slate-400">
-                    Source Bullet #{bullet.source_bullet_id}
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                      isIdentical
-                        ? "bg-slate-200 text-slate-600"
-                        : "bg-indigo-100 text-indigo-700"
-                    }`}
-                  >
-                    {isIdentical ? "Unchanged" : "Reframed"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs sm:text-sm">
-                {/* Original Bullet */}
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Original Bullet Point
-                  </span>
-                  <div className="p-3 bg-slate-50 rounded-lg text-slate-700 border border-slate-150 leading-relaxed min-h-[60px]">
-                    {bullet.original_text}
+            return (
+              <div
+                key={idx}
+                className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all hover:border-slate-300"
+              >
+                {/* Header with Provenance */}
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs gap-2">
+                  <div className="font-semibold text-slate-800">
+                    <span>{company}</span>
+                    <span className="text-slate-400 mx-1.5">•</span>
+                    <span className="text-slate-600 font-normal">{role}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-[10px] text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      Source Bullet #{bullet.source_bullet_id}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                        isIdentical
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-indigo-100 text-indigo-700"
+                      }`}
+                    >
+                      {isIdentical ? "Unchanged (Preserved verbatim)" : "Reframed (Role-aligned)"}
+                    </span>
                   </div>
                 </div>
 
-                {/* Customized Bullet */}
-                <div className="space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 flex items-center space-x-1">
-                    <Sparkles className="h-3 w-3" />
-                    <span>Tailored Bullet Point</span>
-                  </span>
-                  <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[60px]">
-                    {bullet.tailored_text}
+                {/* Side-by-side on desktop, stacked on mobile */}
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs sm:text-sm">
+                  {/* Original Bullet */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Original Source Claim
+                    </span>
+                    <div className="p-3 bg-slate-50 rounded-lg text-slate-700 border border-slate-200 leading-relaxed min-h-[60px]">
+                      {bullet.original_text}
+                    </div>
+                  </div>
+
+                  {/* Customized Bullet */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 flex items-center space-x-1">
+                      <Sparkles className="h-3 w-3" />
+                      <span>Customized Bullet</span>
+                    </span>
+                    <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[60px]">
+                      {bullet.tailored_text}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Rationale Footer */}
-              {bullet.rationale && (
-                <div className="px-4 py-2.5 bg-slate-50/50 border-t border-slate-100 text-xs text-slate-600 flex items-start space-x-2">
-                  <ArrowRight className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
-                  <span>
-                    <strong className="text-slate-700">Rationale:</strong> {bullet.rationale}
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                {/* Rationale Footer */}
+                {bullet.rationale && (
+                  <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-xs text-slate-600 flex items-start space-x-2">
+                    <ArrowRight className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                    <span>
+                      <strong className="text-slate-700">Rationale:</strong> {bullet.rationale}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

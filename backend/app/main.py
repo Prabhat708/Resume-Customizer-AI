@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import Settings, get_settings
 from app.exceptions import DocumentValidationError
-from app.routers import health, resume
+from app.routers import export, health, resume
 from app.schemas.api import CustomizeResponse
 from app.schemas.error import ErrorCode, ErrorDetail, ErrorResponse
 
@@ -90,6 +90,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ── Routers & Endpoints ────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(resume.router, prefix="/api/v1/resume", tags=["resume"])
+app.include_router(export.router, prefix="/api/v1/export", tags=["export"])
 
 
 # Canonical route used by frontend: POST /api/v1/customize
