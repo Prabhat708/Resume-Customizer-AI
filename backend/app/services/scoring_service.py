@@ -66,6 +66,22 @@ def calculate_match_score(requirements: List[RequirementMatch]) -> int:
     return rounded
 
 
+def _format_points(val: float) -> str:
+    """Format points cleanly without banker's rounding truncation (e.g. 2.0 -> '2.0', 5.25 -> '5.25')."""
+    if round(val * 10) == round(val * 100) / 10:
+        return f"{val:.1f}"
+    return f"{val:.2f}"
+
+
+def get_alignment_label(score: int) -> str:
+    """Return deterministic evidence alignment label consistent across backend and frontend."""
+    if score >= 75:
+        return "Strong Evidence Alignment"
+    elif score >= 50:
+        return "Moderate Alignment"
+    return "Partial Evidence Match"
+
+
 def build_scoring_methodology_text(
     requirements: List[RequirementMatch], score: int
 ) -> str:
@@ -92,10 +108,15 @@ def build_scoring_methodology_text(
             1 for r in requirements if r.importance == ImportanceLevel.PREFERRED
         ),
     }
+
+    achieved_str = _format_points(total_achieved)
+    possible_str = _format_points(total_possible)
+    alignment_str = get_alignment_label(score)
+
     return (
         f"Weighted evidence calculation across {n} extracted requirements "
         f"({req_counts[ImportanceLevel.REQUIRED]} required @ 1.5×, "
         f"{req_counts[ImportanceLevel.PREFERRED]} preferred @ 1.0×). "
-        f"Points achieved: {total_achieved:.1f} / {total_possible:.1f} "
-        f"= {score}%."
+        f"Points achieved: {achieved_str} / {possible_str} "
+        f"= {score}% ({alignment_str})."
     )

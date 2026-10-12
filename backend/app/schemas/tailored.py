@@ -75,6 +75,8 @@ class TailoredResume(BaseModel):
     experience: List[TailoredExperienceEntry] = Field(default_factory=list)
     education: List[EducationEntry] = Field(default_factory=list)
     projects: List[ProjectEntry] = Field(default_factory=list)
+    achievements: List[str] = Field(default_factory=list)
+    certifications: List[str] = Field(default_factory=list)
     tailoring_changes: List[TailingChange] = Field(default_factory=list)
     audit_warnings: List[AuditWarning] = Field(
         default_factory=list,

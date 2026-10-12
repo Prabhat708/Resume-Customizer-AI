@@ -35,6 +35,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
 
   const explicitMatches = analysis.breakdown.filter((r) => r.status === "explicitly_supported");
   const partialMatches = analysis.breakdown.filter((r) => r.status === "partially_supported");
+  const unmentionedMatches = analysis.breakdown.filter((r) => r.status === "not_mentioned");
   const missingReqs = analysis.missing_requirements || [];
 
   const toggleExpand = (idx: number) => {
@@ -44,6 +45,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
   const filteredMatches = analysis.breakdown.filter((r) => {
     if (filter === "explicit") return r.status === "explicitly_supported";
     if (filter === "partial") return r.status === "partially_supported";
+    if (filter === "missing") return r.status === "not_mentioned";
     return true;
   });
 
@@ -92,7 +94,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
               <div className="text-blue-700 text-[11px]">Partial</div>
             </div>
             <div className="text-center px-3 py-2 bg-amber-50/60 rounded-lg border border-amber-200 min-w-[70px]">
-              <div className="font-bold text-amber-800 text-sm">{missingReqs.length}</div>
+              <div className="font-bold text-amber-800 text-sm">{unmentionedMatches.length}</div>
               <div className="text-amber-700 text-[11px]">Unmentioned</div>
             </div>
           </div>
@@ -204,7 +206,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
             filter === "missing" ? "bg-amber-600 text-white" : "text-slate-600 hover:bg-slate-100"
           }`}
         >
-          Not Mentioned ({missingReqs.length})
+          Not Mentioned ({unmentionedMatches.length})
         </button>
       </div>
 

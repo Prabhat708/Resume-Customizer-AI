@@ -184,6 +184,13 @@ def _sanitize_and_escape(text: Optional[str]) -> str:
     return sax_escape(s)
 
 
+def _clean_bullet_text(text: str) -> str:
+    """Strip any leading bullet symbols, dots, or numbering to prevent duplicate bullet markers."""
+    if not text:
+        return ""
+    return re.sub(r"^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\d.]+\s*", "", text).strip()
+
+
 class NumberedCanvas(canvas.Canvas):
     """
     Two-pass canvas to dynamically compute and render 'Page X of Y' footers
@@ -405,12 +412,20 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             exp_elements = []
 
             # Company, Role, and Dates table row
-            role_text = _sanitize_and_escape(exp.role)
-            comp_text = _sanitize_and_escape(exp.company)
+            role_text = _sanitize_and_escape(exp.role) if exp.role and exp.role.lower() not in ["role", "software engineer - present"] else ""
+            comp_text = _sanitize_and_escape(exp.company) if exp.company and exp.company.lower() not in ["organization", "company", "present"] else ""
             date_text = _sanitize_and_escape(exp.dates) if exp.dates else ""
 
-            # Table for header: Left col (Role, Company), Right col (Dates)
-            left_p = Paragraph(f"<b>{role_text}</b> — <i>{comp_text}</i>", entry_title_style)
+            if role_text and comp_text:
+                header_str = f"<b>{role_text}</b> — <i>{comp_text}</i>"
+            elif role_text:
+                header_str = f"<b>{role_text}</b>"
+            elif comp_text:
+                header_str = f"<b>{comp_text}</b>"
+            else:
+                header_str = "<b>Software Engineer</b>"
+
+            left_p = Paragraph(header_str, entry_title_style)
             right_p = Paragraph(date_text, entry_date_style)
 
             # Two columns: ~72% and 28%
@@ -434,10 +449,12 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             # Bullets
             if exp.bullets:
                 for b in exp.bullets:
-                    bullet_text = _sanitize_and_escape(b.tailored_text)
-                    exp_elements.append(
-                        Paragraph(f"&bull;&nbsp;&nbsp;{bullet_text}", bullet_style)
-                    )
+                    cleaned_b = _clean_bullet_text(b.tailored_text)
+                    if cleaned_b:
+                        bullet_text = _sanitize_and_escape(cleaned_b)
+                        exp_elements.append(
+                            Paragraph(f"&bull;&nbsp;&nbsp;{bullet_text}", bullet_style)
+                        )
 
             exp_elements.append(Spacer(1, 4))
             # Keep company header with at least its first bullet point
@@ -454,10 +471,19 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
 
         for edu in resume.education:
             deg_text = _sanitize_and_escape(edu.degree)
-            inst_text = _sanitize_and_escape(edu.institution)
+            inst_text = _sanitize_and_escape(edu.institution) if edu.institution and edu.institution.lower() not in ["educational institution", "institution"] else ""
             date_text = _sanitize_and_escape(edu.dates) if edu.dates else ""
 
-            left_p = Paragraph(f"<b>{deg_text}</b> — {inst_text}", entry_title_style)
+            if deg_text and inst_text:
+                header_str = f"<b>{deg_text}</b> — {inst_text}"
+            elif deg_text:
+                header_str = f"<b>{deg_text}</b>"
+            elif inst_text:
+                header_str = f"<b>{inst_text}</b>"
+            else:
+                header_str = ""
+
+            left_p = Paragraph(header_str, entry_title_style)
             right_p = Paragraph(date_text, entry_date_style)
 
             col1_w = content_width * 0.75
@@ -488,8 +514,8 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         add_section_divider("Projects")
 
         for proj in resume.projects:
-            name_text = _sanitize_and_escape(proj.name)
-            desc_text = _sanitize_and_escape(proj.description)
+            name_text = _sanitize_and_escape(proj.name) if proj.name and proj.name.lower() != "project" else ""
+            desc_text = proj.description
 
             tech_str = ""
             if proj.technologies:
@@ -501,10 +527,36 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                 clean_url = _sanitize_and_escape(proj.url)
                 url_str = f" ({clean_url})"
 
-            proj_header = f"<b>{name_text}</b>{url_str}{tech_str}"
-            story.append(Paragraph(proj_header, entry_title_style))
-            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{desc_text}", bullet_style))
+            if name_text:
+                proj_header = f"<b>{name_text}</b>{url_str}{tech_str}"
+                story.append(Paragraph(proj_header, entry_title_style))
+
+            # Split multi-bullet descriptions cleanly
+            for line in desc_text.splitlines():
+                line_clean = _clean_bullet_text(line.strip())
+                if line_clean:
+                    story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(line_clean)}", bullet_style))
             story.append(Spacer(1, 3))
+
+    # 7. Achievements (Optional)
+    achievements = getattr(resume, "achievements", None)
+    if achievements:
+        add_section_divider("Achievements")
+        for ach in achievements:
+            ach_clean = _clean_bullet_text(ach.strip())
+            if ach_clean:
+                story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(ach_clean)}", bullet_style))
+        story.append(Spacer(1, 3))
+
+    # 8. Certifications (Optional)
+    certifications = getattr(resume, "certifications", None)
+    if certifications:
+        add_section_divider("Certifications")
+        for cert in certifications:
+            cert_clean = _clean_bullet_text(cert.strip())
+            if cert_clean:
+                story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(cert_clean)}", bullet_style))
+        story.append(Spacer(1, 3))
 
     # Build PDF with multi-page NumberedCanvas
     doc.build(story, canvasmaker=NumberedCanvas)

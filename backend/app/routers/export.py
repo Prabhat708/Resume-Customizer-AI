@@ -8,8 +8,8 @@ Provides:
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import Response
+from fastapi import APIRouter, status
+from fastapi.responses import JSONResponse, Response
 
 from app.schemas.api import ExportPdfRequest
 from app.schemas.error import ErrorCode, ErrorDetail, ErrorResponse
@@ -55,7 +55,12 @@ async def export_resume_pdf(request: ExportPdfRequest) -> Response:
         )
     except Exception as e:
         logger.exception("Failed to generate resume PDF: %s", str(e))
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate resume PDF: {str(e)}",
+            content=ErrorResponse(
+                error=ErrorDetail(
+                    code=ErrorCode.INTERNAL_ERROR,
+                    message="Failed to generate resume PDF. Please check resume content and retry.",
+                )
+            ).model_dump(),
         )

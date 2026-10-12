@@ -126,31 +126,38 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
           </h3>
 
           <div className="space-y-5">
-            {experience.map((entry: TailoredExperienceEntry, idx: number) => (
-              <div key={idx} className="space-y-1.5">
-                <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">{entry.role}</h4>
-                    <p className="text-xs font-semibold text-indigo-700">{entry.company}</p>
+            {experience.map((entry: TailoredExperienceEntry, idx: number) => {
+              const showCompany =
+                entry.company &&
+                !["organization", "present", "company"].includes(entry.company.toLowerCase().trim());
+              return (
+                <div key={idx} className="space-y-1.5">
+                  <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">{entry.role}</h4>
+                      {showCompany && (
+                        <p className="text-xs font-semibold text-indigo-700">{entry.company}</p>
+                      )}
+                    </div>
+                    {entry.dates && (
+                      <span className="text-xs text-slate-500 font-mono sm:text-right mt-0.5 sm:mt-0">
+                        {entry.dates}
+                      </span>
+                    )}
                   </div>
-                  {entry.dates && (
-                    <span className="text-xs text-slate-500 font-mono sm:text-right mt-0.5 sm:mt-0">
-                      {entry.dates}
-                    </span>
+
+                  {entry.bullets && entry.bullets.length > 0 && (
+                    <ul className="list-disc list-outside pl-4 space-y-1.5 mt-2 text-xs sm:text-sm text-slate-700">
+                      {entry.bullets.map((bullet, bIdx) => (
+                        <li key={bIdx} className="leading-relaxed pl-1">
+                          {bullet.tailored_text}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
-
-                {entry.bullets && entry.bullets.length > 0 && (
-                  <ul className="list-disc list-outside pl-4 space-y-1.5 mt-2 text-xs sm:text-sm text-slate-700">
-                    {entry.bullets.map((bullet, bIdx) => (
-                      <li key={bIdx} className="leading-relaxed pl-1">
-                        {bullet.tailored_text}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -164,57 +171,110 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
           </h3>
 
           <div className="space-y-4">
-            {projects.map((proj: ProjectEntry, idx: number) => (
-              <div key={idx} className="text-xs sm:text-sm space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <h4 className="font-bold text-slate-900">{proj.name}</h4>
-                  {proj.url && (
-                    <a
-                      href={proj.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-indigo-600 hover:underline"
-                    >
-                      View Project
-                    </a>
+            {projects.map((proj: ProjectEntry, idx: number) => {
+              const showTitle = proj.name && proj.name.toLowerCase().trim() !== "project";
+              const descLines = proj.description.split("\n").filter((l) => l.trim());
+              return (
+                <div key={idx} className="text-xs sm:text-sm space-y-1">
+                  <div className="flex items-baseline justify-between">
+                    {showTitle && <h4 className="font-bold text-slate-900">{proj.name}</h4>}
+                    {proj.url && (
+                      <a
+                        href={proj.url.startsWith("http") ? proj.url : `https://${proj.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 hover:underline"
+                      >
+                        {proj.url}
+                      </a>
+                    )}
+                  </div>
+                  {descLines.length > 1 ? (
+                    <ul className="list-disc list-outside pl-4 space-y-1 text-slate-700">
+                      {descLines.map((line, lIdx) => (
+                        <li key={lIdx} className="leading-relaxed pl-1">
+                          {line.replace(/^[\s•*–—◦\d.]+\s*/, "")}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-slate-700 leading-relaxed">{proj.description}</p>
+                  )}
+                  {proj.technologies && proj.technologies.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {proj.technologies.map((t, tIdx) => (
+                        <span key={tIdx} className="px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-600 rounded">
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <p className="text-slate-700 leading-relaxed">{proj.description}</p>
-                {proj.technologies && proj.technologies.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {proj.technologies.map((t, tIdx) => (
-                      <span key={tIdx} className="px-1.5 py-0.5 text-[10px] bg-slate-100 text-slate-600 rounded">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
 
       {/* 6. Education */}
       {education && education.length > 0 && (
-        <section aria-labelledby="resume-education-heading">
+        <section className="mb-6" aria-labelledby="resume-education-heading">
           <h3 id="resume-education-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center space-x-1.5">
             <GraduationCap className="h-3.5 w-3.5 text-indigo-500" />
             <span>Education</span>
           </h3>
 
           <div className="space-y-3">
-            {education.map((edu: EducationEntry, idx: number) => (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between text-xs sm:text-sm">
-                <div>
-                  <h4 className="font-bold text-slate-900">{edu.degree}</h4>
-                  <p className="text-slate-600">{edu.institution}</p>
-                  {edu.details && <p className="text-xs text-slate-500 mt-0.5">{edu.details}</p>}
+            {education.map((edu: EducationEntry, idx: number) => {
+              const showInstitution =
+                edu.institution &&
+                !["educational institution", "institution"].includes(edu.institution.toLowerCase().trim());
+              return (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between text-xs sm:text-sm">
+                  <div>
+                    <h4 className="font-bold text-slate-900">{edu.degree}</h4>
+                    {showInstitution && <p className="text-slate-600">{edu.institution}</p>}
+                    {edu.details && <p className="text-xs text-slate-500 mt-0.5">{edu.details}</p>}
+                  </div>
+                  {edu.dates && <span className="text-xs text-slate-500 font-mono mt-0.5 sm:mt-0">{edu.dates}</span>}
                 </div>
-                {edu.dates && <span className="text-xs text-slate-500 font-mono mt-0.5 sm:mt-0">{edu.dates}</span>}
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </section>
+      )}
+
+      {/* 7. Achievements (Optional) */}
+      {resume.achievements && resume.achievements.length > 0 && (
+        <section className="mb-6" aria-labelledby="resume-achievements-heading">
+          <h3 id="resume-achievements-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center space-x-1.5">
+            <Award className="h-3.5 w-3.5 text-indigo-500" />
+            <span>Achievements</span>
+          </h3>
+          <ul className="list-disc list-outside pl-4 space-y-1 text-xs sm:text-sm text-slate-700">
+            {resume.achievements.map((ach, idx) => (
+              <li key={idx} className="leading-relaxed pl-1">
+                {ach.replace(/^[\s•*–—◦\d.]+\s*/, "")}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* 8. Certifications (Optional) */}
+      {resume.certifications && resume.certifications.length > 0 && (
+        <section aria-labelledby="resume-certifications-heading">
+          <h3 id="resume-certifications-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center space-x-1.5">
+            <Award className="h-3.5 w-3.5 text-indigo-500" />
+            <span>Certifications</span>
+          </h3>
+          <ul className="list-disc list-outside pl-4 space-y-1 text-xs sm:text-sm text-slate-700">
+            {resume.certifications.map((cert, idx) => (
+              <li key={idx} className="leading-relaxed pl-1">
+                {cert.replace(/^[\s•*–—◦\d.]+\s*/, "")}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </article>

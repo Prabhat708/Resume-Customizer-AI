@@ -26,6 +26,8 @@ class ParsedResume(BaseModel):
     experience: List[ExperienceEntry] = Field(default_factory=list)
     education: List[EducationEntry] = Field(default_factory=list)
     projects: List[ProjectEntry] = Field(default_factory=list)
+    achievements: List[str] = Field(default_factory=list)
+    certifications: List[str] = Field(default_factory=list)
     raw_text: str = Field(..., description="Full verbatim extracted text for factuality auditing")
 
 

@@ -69,13 +69,21 @@ export function DiffView({
   }
   const omittedBullets: OmittedBulletItem[] = [];
 
-  tailored.experience.forEach((tailoredExp) => {
-    // Locate corresponding original experience entry by matching company/role
-    const origExp = originalResume?.experience?.find(
-      (oe) =>
-        oe.company.trim().toLowerCase() === tailoredExp.company.trim().toLowerCase() ||
-        oe.role.trim().toLowerCase() === tailoredExp.role.trim().toLowerCase()
-    );
+  tailored.experience.forEach((tailoredExp, expIdx) => {
+    // Locate corresponding original experience entry by matching company/role, substring, or index fallback
+    const origExp =
+      originalResume?.experience?.find(
+        (oe) =>
+          oe.company.trim().toLowerCase() === tailoredExp.company.trim().toLowerCase() ||
+          oe.role.trim().toLowerCase() === tailoredExp.role.trim().toLowerCase() ||
+          (oe.company &&
+            tailoredExp.company &&
+            (oe.company.toLowerCase().includes(tailoredExp.company.toLowerCase()) ||
+              tailoredExp.company.toLowerCase().includes(oe.company.toLowerCase())))
+      ) ||
+      (originalResume?.experience?.length === 1
+        ? originalResume.experience[0]
+        : originalResume?.experience?.[expIdx]);
 
     const tailoredSourceIds = new Set<number>();
 
@@ -160,17 +168,37 @@ export function DiffView({
               <span>Factuality Provenance &amp; Diff Comparison</span>
             </h3>
             <p className="text-xs text-slate-600 mt-1 max-w-2xl leading-relaxed">
-              Side-by-side verification of original candidate claims against customized phrasing.
+              Independent verification of summary, skills, and experience claims against customized phrasing.
               AI customization reframes verified achievements to match job description keywords
-              without inventing ungrounded metrics.
+              without inventing ungrounded metrics or unsupported employment history.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Independent Summary Badge */}
+            {hasSummaryDiff && (
+              <span
+                className={`px-2.5 py-1 rounded-md font-semibold border ${
+                  isSummaryIdentical
+                    ? "bg-slate-100 border-slate-200 text-slate-700"
+                    : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                }`}
+              >
+                Summary: {isSummaryIdentical ? "Unchanged" : origSummary ? "Reframed" : "Generated"}
+              </span>
+            )}
+
+            {/* Independent Skills Badge */}
+            <span className="px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-800 font-semibold">
+              Skills: {relevantSkills.length} Target-Matched, {otherSkills.length} Retained
+            </span>
+
+            {/* Independent Bullets Badge */}
             <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold">
-              {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved
+              Experience: {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved
               {reorderedCount > 0 ? `, ${reorderedCount} Reordered` : ""})
             </span>
+
             {auditWarnings.length > 0 ? (
               <span className="px-2.5 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-semibold flex items-center space-x-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mr-1" />

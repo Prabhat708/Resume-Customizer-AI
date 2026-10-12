@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from app.schemas.resume import ParsedResume
+from app.schemas.resume import ExperienceEntry, ParsedResume
 from app.schemas.tailored import (
     AuditWarning,
     TailoredBullet,
@@ -90,31 +90,58 @@ def audit_and_build_tailored_resume(
         orig_bullet_map = {b.bullet_id: b.text for b in orig_exp.bullets}
         tailored_bullets_list: List[TailoredBullet] = []
 
-        # Find corresponding raw tailored bullets from model output
-        matched_raw_entry = next(
-            (
-                item for item in raw_tailored_experience
-                if item.get("company", "").strip().lower() == orig_exp.company.strip().lower()
-                or item.get("role", "").strip().lower() == orig_exp.role.strip().lower()
-            ),
-            None,
-        )
+    def match_entry(o_exp: ExperienceEntry, exp_idx: int) -> Optional[dict]:
+        orig_c = o_exp.company.strip().lower()
+        orig_r = o_exp.role.strip().lower()
+
+        # 1. Exact match
+        for item in raw_tailored_experience:
+            it_c = item.get("company", "").strip().lower()
+            it_r = item.get("role", "").strip().lower()
+            if (it_c and it_c == orig_c) or (it_r and it_r == orig_r):
+                return item
+
+        # 2. Substring / containment match
+        for item in raw_tailored_experience:
+            it_c = item.get("company", "").strip().lower()
+            it_r = item.get("role", "").strip().lower()
+            if it_c and (it_c in orig_c or orig_c in it_c):
+                return item
+            if it_r and (it_r in orig_r or orig_r in it_r):
+                return item
+
+        # 3. If single experience entry in original and >=1 in model output
+        if len(parsed_resume.experience) == 1 and len(raw_tailored_experience) >= 1:
+            return raw_tailored_experience[0]
+
+        # 4. Index-based match
+        if exp_idx < len(raw_tailored_experience):
+            return raw_tailored_experience[exp_idx]
+
+        return None
+
+    for exp_idx, orig_exp in enumerate(parsed_resume.experience):
+        tailored_bullets_list: List[TailoredBullet] = []
+        matched_raw_entry = match_entry(orig_exp, exp_idx)
 
         model_bullets = matched_raw_entry.get("bullets", []) if matched_raw_entry else []
         model_bullet_by_id = {
             b.get("source_bullet_id"): b for b in model_bullets if "source_bullet_id" in b
         }
 
-        for orig_b in orig_exp.bullets:
+        for b_idx, orig_b in enumerate(orig_exp.bullets):
             b_id = orig_b.bullet_id
             orig_text = orig_b.text
 
-            if b_id in model_bullet_by_id:
-                m_bullet = model_bullet_by_id[b_id]
+            # Look up by explicit source_bullet_id, or fallback to sequential index in model_bullets
+            m_bullet = model_bullet_by_id.get(b_id)
+            if m_bullet is None and b_idx < len(model_bullets):
+                m_bullet = model_bullets[b_idx]
+
+            if m_bullet is not None:
                 tailored_text = m_bullet.get("tailored_text", orig_text).strip()
                 rationale = m_bullet.get("rationale", "Reframed to emphasize target qualifications.")
             else:
-                # Default to original bullet if model did not return a rewrite for this id
                 tailored_text = orig_text
                 rationale = "Retained original achievement."
 
@@ -152,15 +179,27 @@ def audit_and_build_tailored_resume(
             )
         )
 
-    # 3. Tailoring Changes
-    tailoring_changes = [
-        TailingChange(
-            section=c.get("section", "Experience"),
-            change_type=c.get("change_type", "reframed"),
-            reasoning=c.get("reasoning", "Aligned with job requirements while preserving candidate qualifications."),
+    # 3. Tailoring Changes (safely normalize model change_type to ChangeType enum)
+    tailoring_changes: List[TailingChange] = []
+    for c in raw_tailoring_changes:
+        raw_ct = str(c.get("change_type", "reframed")).strip().lower()
+        if raw_ct in ("reframed", "reordered", "focused", "tailored"):
+            valid_ct = "reframed"
+        elif raw_ct in ("enhanced", "expanded", "highlighted"):
+            valid_ct = "enhanced"
+        elif raw_ct in ("unchanged", "preserved", "retained"):
+            valid_ct = "unchanged"
+        else:
+            valid_ct = "reframed"
+
+        tailoring_changes.append(
+            TailingChange(
+                section=str(c.get("section", "Experience")),
+                change_type=valid_ct,
+                reasoning=str(c.get("reasoning", "Aligned with job requirements while preserving candidate qualifications.")),
+            )
         )
-        for c in raw_tailoring_changes
-    ]
+
     if not tailoring_changes:
         tailoring_changes.append(
             TailingChange(
@@ -177,6 +216,8 @@ def audit_and_build_tailored_resume(
         experience=tailored_experience,
         education=parsed_resume.education,
         projects=parsed_resume.projects,
+        achievements=parsed_resume.achievements,
+        certifications=parsed_resume.certifications,
         tailoring_changes=tailoring_changes,
         audit_warnings=audit_warnings,
     )

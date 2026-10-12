@@ -55,6 +55,8 @@ export interface ParsedResume {
   experience: ExperienceEntry[];
   education: EducationEntry[];
   projects: ProjectEntry[];
+  achievements?: string[];
+  certifications?: string[];
   raw_text: string;
 }
 
@@ -119,6 +121,8 @@ export interface TailoredResume {
   experience: TailoredExperienceEntry[];
   education: EducationEntry[];
   projects: ProjectEntry[];
+  achievements?: string[];
+  certifications?: string[];
   tailoring_changes: TailingChange[];
   audit_warnings: AuditWarning[];
 }

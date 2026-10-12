@@ -233,3 +233,33 @@ def test_missing_optional_sections_safety():
     assert len(minimal_resume.education) == 0
     assert len(minimal_resume.projects) == 0
     assert len(minimal_resume.skills.retained_relevant) == 0
+
+
+def test_tailoring_change_coercion_from_unstructured_model_strings():
+    """Verifies that non-standard change_type strings from LLM output (like 'filtered', 'reordered') coerce safely without 500 error."""
+    from app.services.factuality_auditor import audit_and_build_tailored_resume
+
+    parsed_resume = ParsedResume(
+        contact_info=ContactInfo(name="Candidate"),
+        skills=["Python"],
+        experience=[],
+        raw_text="Candidate raw text with Python",
+    )
+
+    tailored = audit_and_build_tailored_resume(
+        parsed_resume=parsed_resume,
+        raw_tailored_summary="Summary",
+        raw_relevant_skills=["Python"],
+        raw_tailored_experience=[],
+        raw_tailoring_changes=[
+            {"section": "Experience", "change_type": "filtered", "reasoning": "Filtered irrelevant items"},
+            {"section": "Summary", "change_type": "reordered", "reasoning": "Reordered statements"},
+            {"section": "Skills", "change_type": "highlighted", "reasoning": "Highlighted key skills"},
+        ],
+    )
+
+    assert len(tailored.tailoring_changes) == 3
+    assert tailored.tailoring_changes[0].change_type == ChangeType.REFRAMED
+    assert tailored.tailoring_changes[1].change_type == ChangeType.REFRAMED
+    assert tailored.tailoring_changes[2].change_type == ChangeType.ENHANCED
+

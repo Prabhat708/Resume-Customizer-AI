@@ -301,3 +301,19 @@ def test_export_pdf_endpoint_invalid_payload():
     """Tests POST /api/v1/export/pdf with invalid body returns 400 or 422 validation error."""
     response = client.post("/api/v1/export/pdf", json={"tailored_resume": {"invalid": "data"}})
     assert response.status_code in (400, 422)
+
+
+def test_export_pdf_endpoint_internal_error_returns_error_response():
+    """Tests that PDF exporter failure returns standardized 500 ErrorResponse envelope."""
+    from unittest.mock import patch
+    resume = _make_sample_resume()
+    payload = ExportPdfRequest(tailored_resume=resume).model_dump()
+
+    with patch("app.routers.export.generate_resume_pdf", side_effect=RuntimeError("Simulated ReportLab crash")):
+        response = client.post("/api/v1/export/pdf", json=payload)
+        assert response.status_code == 500
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == "INTERNAL_ERROR"
+        assert "Failed to generate resume PDF" in data["error"]["message"]
+
