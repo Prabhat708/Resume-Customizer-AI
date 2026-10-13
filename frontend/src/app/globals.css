@@ -24,3 +24,103 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.35in 0.4in;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Hide app navigation, buttons, and app shell chrome in print */
+  header:not(.resume-header),
+  footer:not(.resume-footer),
+  nav,
+  button,
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Candidate contact header must always be visible in print */
+  .resume-header,
+  header.resume-header {
+    display: block !important;
+  }
+
+  .print-page-1 {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  /* Prevent redundant break-before causing accidental page break */
+  .print-page-2 {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Resume print typography and compact spacing to guarantee 2-page fit */
+  .resume-sheet {
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    background: transparent !important;
+  }
+
+  .resume-section {
+    margin-bottom: 0.5rem !important; /* ~8px */
+  }
+
+  .resume-section-heading {
+    margin-bottom: 0.25rem !important;
+    padding-bottom: 0.125rem !important;
+    font-size: 0.72rem !important;
+  }
+
+  .resume-entry-title {
+    font-size: 0.8rem !important;
+    line-height: 1.15rem !important;
+  }
+
+  .resume-entry-body,
+  .resume-bullet-text {
+    font-size: 0.6875rem !important; /* 11px */
+    line-height: 0.9375rem !important; /* 15px */
+  }
+
+  .resume-bullet-list {
+    margin-top: 0.2rem !important;
+    margin-bottom: 0 !important;
+    padding-left: 1rem !important;
+  }
+
+  .resume-bullet-list li {
+    margin-bottom: 0.125rem !important;
+  }
+
+  .resume-project-item {
+    margin-bottom: 0.35rem !important;
+  }
+
+  .resume-tag {
+    font-size: 0.5625rem !important; /* 9px */
+    padding: 0 0.25rem !important;
+    line-height: 0.85rem !important;
+  }
+
+  .resume-footer {
+    margin-top: 0.35rem !important;
+    padding-top: 0.2rem !important;
+  }
+}
+

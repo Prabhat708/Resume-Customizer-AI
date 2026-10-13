@@ -33,6 +33,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     HRFlowable,
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -185,10 +186,14 @@ def _sanitize_and_escape(text: Optional[str]) -> str:
 
 
 def _clean_bullet_text(text: str) -> str:
-    """Strip any leading bullet symbols, dots, or numbering to prevent duplicate bullet markers."""
+    """Strip any leading bullet symbols or numbered list prefixes without stripping leading numbers that are part of text (e.g. '160 Days of DSA', '3rd place')."""
     if not text:
         return ""
-    return re.sub(r"^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\d.]+\s*", "", text).strip()
+    return re.sub(
+        r"^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*",
+        "",
+        text,
+    ).strip()
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -465,7 +470,91 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             else:
                 story.append(KeepTogether(exp_elements))
 
-    # 5. Education (Optional)
+    # Calculate content volume and Page 1 accumulated content to determine balanced pagination
+    base_p1_chars = (
+        len(resume.contact_info.name or "")
+        + len(resume.summary or "")
+        + sum(len(s) for s in (resume.skills.retained_relevant + resume.skills.retained_other))
+        + sum(len(b.tailored_text) for exp in resume.experience for b in exp.bullets)
+        + sum(len(exp.role) + len(exp.company or "") for exp in resume.experience)
+    )
+
+    total_content_chars = (
+        base_p1_chars
+        + sum(len(p.description) + len(p.name or "") for p in (resume.projects or []))
+        + sum(len(e.degree) + len(e.institution) for e in (resume.education or []))
+        + sum(len(a) for a in (getattr(resume, "achievements", None) or []))
+        + sum(len(c) for c in (getattr(resume, "certifications", None) or []))
+    )
+
+    is_multipage = (
+        total_content_chars > 2000
+        and len(resume.experience) > 0
+        and (len(resume.projects or []) > 0 or len(resume.education or []) > 0)
+    )
+
+    # If Experience alone fills Page 1 comfortably (>= 1650 chars) or there are no projects,
+    # insert page break here. Otherwise, allow Key Projects to start on Page 1 to avoid empty voids.
+    page_has_broken = False
+    if is_multipage and (base_p1_chars >= 1650 or not resume.projects):
+        story.append(PageBreak())
+        page_has_broken = True
+
+    # 5. Projects (Optional)
+    if resume.projects:
+        add_section_divider("Key Projects")
+        accumulated_chars = base_p1_chars
+
+        for idx, proj in enumerate(resume.projects):
+            proj_elements = []
+            name_text = _sanitize_and_escape(proj.name) if proj.name and proj.name.lower() != "project" else ""
+            desc_text = proj.description
+
+            tech_str = ""
+            if proj.technologies:
+                tech_list = ", ".join(_sanitize_and_escape(t) for t in proj.technologies)
+                tech_str = f" | <i>Technologies: {tech_list}</i>"
+
+            url_str = ""
+            if proj.url:
+                clean_url = _sanitize_and_escape(proj.url)
+                url_str = f" ({clean_url})"
+
+            if name_text:
+                proj_header = f"<b>{name_text}</b>{url_str}{tech_str}"
+                proj_elements.append(Paragraph(proj_header, entry_title_style))
+
+            # Split multi-bullet descriptions cleanly
+            for line in desc_text.splitlines():
+                line_clean = _clean_bullet_text(line.strip())
+                if line_clean:
+                    proj_elements.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(line_clean)}", bullet_style))
+            proj_elements.append(Spacer(1, 3))
+            story.append(KeepTogether(proj_elements))
+
+            accumulated_chars += len(proj.description) + len(proj.name or "")
+            # If multi-page and we haven't broken yet, break when Page 1 reaches balanced capacity (~1,650+ content chars)
+            # and there are remaining projects to continue seamlessly on Page 2
+            if (
+                is_multipage
+                and not page_has_broken
+                and accumulated_chars >= 1650
+                and idx < len(resume.projects) - 1
+            ):
+                story.append(PageBreak())
+                add_section_divider("Key Projects (Continued)")
+                page_has_broken = True
+
+    # If multi-page and page has not broken yet before Education/Achievements/Certifications
+    if (
+        is_multipage
+        and not page_has_broken
+        and (resume.education or getattr(resume, "achievements", None) or getattr(resume, "certifications", None))
+    ):
+        story.append(PageBreak())
+        page_has_broken = True
+
+    # 6. Education (Optional)
     if resume.education:
         add_section_divider("Education")
 
@@ -501,42 +590,14 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                     ]
                 )
             )
-            story.append(edu_table)
+            edu_elements = [edu_table]
 
             if edu.details:
                 details_text = _sanitize_and_escape(edu.details)
-                story.append(Paragraph(details_text, entry_subtitle_style))
+                edu_elements.append(Paragraph(details_text, entry_subtitle_style))
 
-            story.append(Spacer(1, 3))
-
-    # 6. Projects (Optional)
-    if resume.projects:
-        add_section_divider("Projects")
-
-        for proj in resume.projects:
-            name_text = _sanitize_and_escape(proj.name) if proj.name and proj.name.lower() != "project" else ""
-            desc_text = proj.description
-
-            tech_str = ""
-            if proj.technologies:
-                tech_list = ", ".join(_sanitize_and_escape(t) for t in proj.technologies)
-                tech_str = f" | <i>Technologies: {tech_list}</i>"
-
-            url_str = ""
-            if proj.url:
-                clean_url = _sanitize_and_escape(proj.url)
-                url_str = f" ({clean_url})"
-
-            if name_text:
-                proj_header = f"<b>{name_text}</b>{url_str}{tech_str}"
-                story.append(Paragraph(proj_header, entry_title_style))
-
-            # Split multi-bullet descriptions cleanly
-            for line in desc_text.splitlines():
-                line_clean = _clean_bullet_text(line.strip())
-                if line_clean:
-                    story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(line_clean)}", bullet_style))
-            story.append(Spacer(1, 3))
+            edu_elements.append(Spacer(1, 3))
+            story.append(KeepTogether(edu_elements))
 
     # 7. Achievements (Optional)
     achievements = getattr(resume, "achievements", None)

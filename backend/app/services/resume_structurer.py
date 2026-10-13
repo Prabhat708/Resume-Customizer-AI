@@ -427,11 +427,29 @@ def structure_raw_resume(raw_text: str, filename: str = "resume") -> ParsedResum
                     name = parts[0].strip()
                     if len(parts) > 1:
                         tech_part = parts[1].strip()
-                        raw_techs = re.split(r"[,/|;·]", tech_part)
+                        # Extract any embedded URL and strip it from the technology string
+                        found_urls = URL_PATTERN.findall(tech_part)
+                        if found_urls and not proj_url:
+                            proj_url = found_urls[0]
+                        clean_tech_part = URL_PATTERN.sub("", tech_part).strip()
+
+                        raw_techs = re.split(r"[,/|;·]", clean_tech_part)
                         for t in raw_techs:
                             t_clean = t.strip()
-                            if t_clean and not URL_PATTERN.search(t_clean) and len(t_clean) < 30:
-                                techs.append(t_clean)
+                            if not t_clean:
+                                continue
+                            # If token has multiple words, check if words contain distinct technologies/labels
+                            words = t_clean.split()
+                            if len(words) > 1 and t_clean.lower() not in (
+                                "asp.net core", "asp.net web api", "react native", "spring boot", "ruby on rails"
+                            ):
+                                for w in words:
+                                    w_clean = w.strip().strip(",")
+                                    if w_clean and len(w_clean) < 30 and w_clean not in techs:
+                                        techs.append(w_clean)
+                            else:
+                                if t_clean not in techs and len(t_clean) < 30:
+                                    techs.append(t_clean)
                 else:
                     name = title_line
 

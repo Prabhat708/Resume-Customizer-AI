@@ -12,7 +12,8 @@
 
 export type SupportStatus = "explicitly_supported" | "partially_supported" | "not_mentioned";
 export type ImportanceLevel = "required" | "preferred";
-export type ChangeType = "reframed" | "enhanced" | "unchanged";
+export type ChangeType = "reframed" | "enhanced" | "unchanged" | "reordered";
+export type EvidenceLevel = "work_experience" | "projects" | "skills" | "none";
 
 export interface ContactInfo {
   name: string;
@@ -64,6 +65,7 @@ export interface RequirementMatch {
   requirement: string;
   importance: ImportanceLevel;
   status: SupportStatus;
+  evidence_level?: EvidenceLevel | null;
   evidence_quote?: string | null;
   notes: string;
 }

@@ -17,6 +17,7 @@ class ChangeType(str, Enum):
     REFRAMED = "reframed"
     ENHANCED = "enhanced"
     UNCHANGED = "unchanged"
+    REORDERED = "reordered"
 
 
 class TailoredBullet(BaseModel):

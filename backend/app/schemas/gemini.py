@@ -38,6 +38,10 @@ class GeminiRequirementMatch(BaseModel):
         default="not_mentioned",
         description="'explicitly_supported', 'partially_supported', or 'not_mentioned'",
     )
+    evidence_level: Optional[str] = Field(
+        default=None,
+        description="'work_experience', 'projects', 'skills', or 'none'",
+    )
     evidence_quote: Optional[str] = Field(
         default=None, description="Verbatim quote from candidate resume proving this requirement"
     )

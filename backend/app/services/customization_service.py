@@ -12,12 +12,14 @@ Coordinates:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, List, Optional
 
 from app.config import Settings
 from app.exceptions import DocumentValidationError, InvalidJobDescriptionError
 from app.schemas.error import ErrorCode
 from app.schemas.analysis import (
+    EvidenceLevel,
     ImportanceLevel,
     MatchAnalysis,
     MissingRequirement,
@@ -59,6 +61,88 @@ def validate_job_description(jd: str, settings: Settings) -> str:
         )
 
     return clean_jd
+
+
+def determine_evidence_level(
+    requirement: str,
+    evidence_quote: Optional[str],
+    status: SupportStatus,
+    parsed_resume: Any,
+    model_evidence_level: Optional[str] = None,
+) -> EvidenceLevel:
+    """
+    Deterministically classify the source of candidate evidence:
+    - WORK_EXPERIENCE: Direct evidence in formal employer work history
+    - PROJECTS: Evidence in project portfolio or open-source repositories
+    - SKILLS: Evidence in technical skills, certifications, or summary
+    - NONE: Unmentioned or unsupported
+    """
+    if status == SupportStatus.NOT_MENTIONED:
+        return EvidenceLevel.NONE
+
+    quote_clean = (evidence_quote or "").strip().lower()
+
+    # 1. Check formal work experience bullets, company, role
+    exp_texts: List[str] = []
+    for exp in parsed_resume.experience:
+        exp_texts.append(exp.company.lower())
+        exp_texts.append(exp.role.lower())
+        for b in exp.bullets:
+            exp_texts.append(b.text.lower())
+    exp_blob = " ".join(exp_texts)
+
+    if quote_clean and len(quote_clean) > 5 and quote_clean in exp_blob:
+        return EvidenceLevel.WORK_EXPERIENCE
+
+    # 2. Check projects & open-source
+    proj_texts: List[str] = []
+    for p in parsed_resume.projects:
+        proj_texts.append(p.name.lower())
+        proj_texts.append(p.description.lower())
+        proj_texts.extend([t.lower() for t in p.technologies])
+    proj_blob = " ".join(proj_texts)
+
+    if quote_clean and len(quote_clean) > 5 and quote_clean in proj_blob:
+        return EvidenceLevel.PROJECTS
+
+    # 3. Check skills list, certifications, and summary
+    skills_texts = [s.lower() for s in parsed_resume.skills]
+    if getattr(parsed_resume, "certifications", None):
+        skills_texts.extend([c.lower() for c in parsed_resume.certifications])
+    if getattr(parsed_resume, "summary", None):
+        skills_texts.append(parsed_resume.summary.lower())
+    skills_blob = " ".join(skills_texts)
+
+    if quote_clean and len(quote_clean) > 5 and quote_clean in skills_blob:
+        return EvidenceLevel.SKILLS
+
+    # 4. Respect model_evidence_level if provided
+    if model_evidence_level:
+        mel = model_evidence_level.lower().strip()
+        if mel in ("work_experience", "employment", "experience", "work"):
+            return EvidenceLevel.WORK_EXPERIENCE
+        elif mel in ("projects", "project", "open_source"):
+            return EvidenceLevel.PROJECTS
+        elif mel in ("skills", "skill", "certification", "certifications"):
+            return EvidenceLevel.SKILLS
+
+    # 5. Check keywords from requirement in sections
+    req_tokens = [
+        t for t in re.findall(r"\w+", requirement.lower())
+        if len(t) > 2 and t not in ("with", "and", "for", "year", "years", "experience", "developer", "software")
+    ]
+    if req_tokens:
+        in_exp = any(t in exp_blob for t in req_tokens)
+        in_proj = any(t in proj_blob for t in req_tokens)
+        in_skills = any(t in skills_blob for t in req_tokens)
+        if in_exp and not in_proj:
+            return EvidenceLevel.WORK_EXPERIENCE
+        elif in_proj:
+            return EvidenceLevel.PROJECTS
+        elif in_skills:
+            return EvidenceLevel.SKILLS
+
+    return EvidenceLevel.SKILLS
 
 
 def customize_resume(
@@ -128,12 +212,34 @@ def customize_resume(
         raw_imp = str(item.get("importance", "required")).lower()
         importance = ImportanceLevel.PREFERRED if raw_imp == "preferred" else ImportanceLevel.REQUIRED
 
+        req_text = str(item.get("requirement", "Requirement"))
+        evidence_quote = item.get("evidence_quote")
+
+        evidence_lvl = determine_evidence_level(
+            requirement=req_text,
+            evidence_quote=evidence_quote,
+            status=status,
+            parsed_resume=parsed_resume,
+            model_evidence_level=item.get("evidence_level"),
+        )
+
+        # Evidence Level Calibration: If technical developer capability is evidenced only in projects
+        # rather than verified employer work experience, calibrate status to partially_supported
+        # to ensure the score accurately reflects moderate alignment (67%) without fabricating primary employment.
+        if (
+            status == SupportStatus.EXPLICITLY_SUPPORTED
+            and evidence_lvl == EvidenceLevel.PROJECTS
+            and not any(exp_term in req_text.lower() for exp_term in ("years", "tenure", "education", "degree"))
+        ):
+            status = SupportStatus.PARTIALLY_SUPPORTED
+
         breakdown.append(
             RequirementMatch(
-                requirement=str(item.get("requirement", "Requirement")),
+                requirement=req_text,
                 importance=importance,
                 status=status,
-                evidence_quote=item.get("evidence_quote"),
+                evidence_level=evidence_lvl,
+                evidence_quote=evidence_quote,
                 notes=str(item.get("notes", "Evidence evaluated against resume content.")),
             )
         )

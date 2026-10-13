@@ -21,9 +21,14 @@ rounding behavior.
 from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import List
+from typing import List, Optional
 
-from app.schemas.analysis import ImportanceLevel, RequirementMatch, SupportStatus
+from app.schemas.analysis import (
+    EvidenceLevel,
+    ImportanceLevel,
+    RequirementMatch,
+    SupportStatus,
+)
 
 # ── Weight tables ────────────────────────────────────────────────────────────
 
@@ -73,11 +78,42 @@ def _format_points(val: float) -> str:
     return f"{val:.2f}"
 
 
-def get_alignment_label(score: int) -> str:
-    """Return deterministic evidence alignment label consistent across backend and frontend."""
+def get_alignment_label(
+    score: int, requirements: Optional[List[RequirementMatch]] = None
+) -> str:
+    """
+    Return deterministic evidence alignment label consistent across backend and frontend.
+    Communicates actual evidence scope without implying unverified workplace experience.
+    """
+    has_proj_or_skills = False
+    all_work = False
+    if requirements:
+        supported = [
+            r
+            for r in requirements
+            if r.status in (SupportStatus.EXPLICITLY_SUPPORTED, SupportStatus.PARTIALLY_SUPPORTED)
+        ]
+        if supported:
+            has_proj_or_skills = any(
+                getattr(r, "evidence_level", None) in (EvidenceLevel.PROJECTS, EvidenceLevel.SKILLS)
+                for r in supported
+            )
+            all_work = all(
+                getattr(r, "evidence_level", None) == EvidenceLevel.WORK_EXPERIENCE
+                for r in supported
+            )
+
     if score >= 75:
+        if has_proj_or_skills and not all_work:
+            return "Strong Evidence Alignment (Skills & Projects)"
+        elif all_work:
+            return "Strong Workplace Evidence Alignment"
         return "Strong Evidence Alignment"
     elif score >= 50:
+        if has_proj_or_skills and not all_work:
+            return "Moderate Alignment (Skills & Projects)"
+        elif all_work:
+            return "Moderate Workplace Alignment"
         return "Moderate Alignment"
     return "Partial Evidence Match"
 
@@ -87,7 +123,7 @@ def build_scoring_methodology_text(
 ) -> str:
     """
     Produce a human-readable explanation of how the score was calculated,
-    so the result is transparent and reproducible by the candidate.
+    so the result is transparent, explainable, and reproducible by the candidate.
     """
     if not requirements:
         return "No requirements could be extracted from the job description. Score defaults to 0."
@@ -111,12 +147,30 @@ def build_scoring_methodology_text(
 
     achieved_str = _format_points(total_achieved)
     possible_str = _format_points(total_possible)
-    alignment_str = get_alignment_label(score)
+    alignment_str = get_alignment_label(score, requirements)
+
+    exp_count = sum(
+        1 for r in requirements if getattr(r, "evidence_level", None) == EvidenceLevel.WORK_EXPERIENCE
+    )
+    proj_count = sum(
+        1 for r in requirements if getattr(r, "evidence_level", None) == EvidenceLevel.PROJECTS
+    )
+    skill_count = sum(
+        1 for r in requirements if getattr(r, "evidence_level", None) == EvidenceLevel.SKILLS
+    )
+
+    evidence_summary = ""
+    if exp_count or proj_count or skill_count:
+        evidence_summary = (
+            f" [Evidence verified: {exp_count} in primary employment, "
+            f"{proj_count} in project portfolio, {skill_count} in skill listings]. "
+            "Individual competency evidence across portfolio and skills does not imply verified primary employment tenure for skills demonstrated in projects."
+        )
 
     return (
         f"Weighted evidence calculation across {n} extracted requirements "
         f"({req_counts[ImportanceLevel.REQUIRED]} required @ 1.5×, "
         f"{req_counts[ImportanceLevel.PREFERRED]} preferred @ 1.0×). "
         f"Points achieved: {achieved_str} / {possible_str} "
-        f"= {score}% ({alignment_str})."
+        f"= {score}% ({alignment_str}).{evidence_summary}"
     )

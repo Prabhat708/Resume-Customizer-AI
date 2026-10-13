@@ -23,10 +23,21 @@ class ImportanceLevel(str, Enum):
     PREFERRED = "preferred"
 
 
+class EvidenceLevel(str, Enum):
+    WORK_EXPERIENCE = "work_experience"
+    PROJECTS = "projects"
+    SKILLS = "skills"
+    NONE = "none"
+
+
 class RequirementMatch(BaseModel):
     requirement: str = Field(..., description="Requirement extracted from job description")
     importance: ImportanceLevel
     status: SupportStatus
+    evidence_level: Optional[EvidenceLevel] = Field(
+        None,
+        description="Source of candidate evidence: work_experience, projects, skills, or none",
+    )
     evidence_quote: Optional[str] = Field(
         None, description="Verbatim quote from original resume supporting this requirement"
     )

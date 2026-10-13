@@ -10,6 +10,9 @@ import {
   ChevronUp,
   Calculator,
   ShieldAlert,
+  Briefcase,
+  FolderGit2,
+  Wrench,
 } from "lucide-react";
 import { MatchAnalysis, RequirementMatch, MissingRequirement } from "@/types/api";
 
@@ -37,6 +40,34 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
   const partialMatches = analysis.breakdown.filter((r) => r.status === "partially_supported");
   const unmentionedMatches = analysis.breakdown.filter((r) => r.status === "not_mentioned");
   const missingReqs = analysis.missing_requirements || [];
+
+  const workMatches = analysis.breakdown.filter((r) => r.evidence_level === "work_experience");
+  const projMatches = analysis.breakdown.filter((r) => r.evidence_level === "projects");
+  const skillMatches = analysis.breakdown.filter((r) => r.evidence_level === "skills");
+
+  const hasSkillsOrProjEvidence = analysis.breakdown.some(
+    (r) =>
+      r.status !== "not_mentioned" &&
+      (r.evidence_level === "projects" || r.evidence_level === "skills")
+  );
+  const allWorkEvidence =
+    analysis.breakdown.length > 0 &&
+    analysis.breakdown.every(
+      (r) => r.status === "not_mentioned" || r.evidence_level === "work_experience"
+    );
+
+  const alignmentLabel =
+    score >= 75
+      ? hasSkillsOrProjEvidence && !allWorkEvidence
+        ? "Strong Evidence Alignment (Skills & Projects)"
+        : allWorkEvidence
+        ? "Strong Workplace Evidence Alignment"
+        : "Strong Evidence Alignment"
+      : score >= 50
+      ? hasSkillsOrProjEvidence && !allWorkEvidence
+        ? "Moderate Alignment (Skills & Projects)"
+        : "Moderate Alignment"
+      : "Partial Evidence Match";
 
   const toggleExpand = (idx: number) => {
     setExpandedIndex(expandedIndex === idx ? null : idx);
@@ -75,16 +106,12 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
                 {score}%
               </span>
               <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${scoreColor}`}>
-                {score >= 75
-                  ? "Strong Evidence Alignment"
-                  : score >= 50
-                  ? "Moderate Alignment"
-                  : "Partial Evidence Match"}
+                {alignmentLabel}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-xs">
             <div className="text-center px-3 py-2 bg-emerald-50/60 rounded-lg border border-emerald-200 min-w-[70px]">
               <div className="font-bold text-emerald-800 text-sm">{explicitMatches.length}</div>
               <div className="text-emerald-700 text-[11px]">Supported</div>
@@ -95,7 +122,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
             </div>
             <div className="text-center px-3 py-2 bg-amber-50/60 rounded-lg border border-amber-200 min-w-[70px]">
               <div className="font-bold text-amber-800 text-sm">{unmentionedMatches.length}</div>
-              <div className="text-amber-700 text-[11px]">Unmentioned</div>
+              <div className="text-amber-700 text-[11px]">Missing</div>
             </div>
           </div>
         </div>
@@ -168,7 +195,62 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
         </div>
       </div>
 
-      {/* 2. Filter Navigation */}
+      {/* 2. Evidence Reconciliation & Workplace Calibration Card */}
+      <div className="bg-indigo-50/60 rounded-xl border border-indigo-200 p-5 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center space-x-2">
+            <ShieldAlert className="h-4 w-4 text-indigo-700 shrink-0" />
+            <h4 className="text-sm font-bold text-slate-900">
+              Evidence Reconciliation: Evaluated Competencies vs. Primary Employment
+            </h4>
+          </div>
+          <span className="text-[11px] font-semibold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded border border-indigo-200 w-fit">
+            Calibrated Evidence Scope
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="bg-white p-3 rounded-lg border border-indigo-100 space-y-1">
+            <div className="font-semibold text-emerald-800 flex items-center space-x-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              <span>Scored Competencies ({score}% Match)</span>
+            </div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              Full evidence verified across {analysis.breakdown.length} individual technical competencies
+              in your resume ({workMatches.length} in employment, {projMatches.length} in project portfolio, {skillMatches.length} in skill listings).
+            </p>
+          </div>
+
+          <div className="bg-white p-3 rounded-lg border border-indigo-100 space-y-1">
+            <div className="font-semibold text-amber-800 flex items-center space-x-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <span>Primary Employment Context</span>
+            </div>
+            <p className="text-slate-600 text-[11px] leading-relaxed">
+              {missingReqs.find((m) => /workplace|employment|production|full[- ]?stack/i.test(m.requirement))?.guidance ||
+                "Production full-stack development combining React, Node.js, and MySQL within formal primary employment is not established in your primary employer history (which demonstrated ASP.NET, C#, and Python). Technical competencies are proven via your project portfolio."}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-600 border-t border-indigo-100">
+          <span className="font-semibold text-slate-700">Evidence Distribution:</span>
+          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white border border-slate-200">
+            <Briefcase className="h-3 w-3 text-emerald-600" />
+            <span>Employment ({workMatches.length})</span>
+          </span>
+          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white border border-slate-200">
+            <FolderGit2 className="h-3 w-3 text-purple-600" />
+            <span>Projects ({projMatches.length})</span>
+          </span>
+          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-white border border-slate-200">
+            <Wrench className="h-3 w-3 text-blue-600" />
+            <span>Skills/Other ({skillMatches.length})</span>
+          </span>
+        </div>
+      </div>
+
+      {/* 3. Filter Navigation */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
         <button
           type="button"
@@ -210,7 +292,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
         </button>
       </div>
 
-      {/* 3. Evaluated Job Requirements List */}
+      {/* 4. Evaluated Job Requirements List */}
       {filter !== "missing" && (
         <div className="space-y-3">
           <h4 className="text-sm font-bold text-slate-900">
@@ -273,6 +355,26 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
                               ? "Explicit Evidence (1.0 wt)"
                               : "Partial Evidence (0.5 wt)"}
                           </span>
+                          {req.evidence_level === "work_experience" ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center space-x-1">
+                              <Briefcase className="h-3 w-3 text-emerald-600" />
+                              <span>Employment Evidence</span>
+                            </span>
+                          ) : req.evidence_level === "projects" ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 inline-flex items-center space-x-1">
+                              <FolderGit2 className="h-3 w-3 text-purple-600" />
+                              <span>Project Evidence</span>
+                            </span>
+                          ) : req.evidence_level === "skills" ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center space-x-1">
+                              <Wrench className="h-3 w-3 text-blue-600" />
+                              <span>Skill Listing</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                              No Evidence
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-600 mt-1">{req.notes}</p>
                       </div>

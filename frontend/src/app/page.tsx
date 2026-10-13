@@ -139,12 +139,12 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans print:bg-white print:min-h-0">
       {/* 1. Header with branding and privacy reassurance */}
       <Header health={health} healthError={healthError} loading={healthLoading} />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full print:p-0 print:m-0 print:max-w-none">
         {/* Loading Overlay */}
         <LoadingOverlay isLoading={isSubmitting} />
 
@@ -257,9 +257,9 @@ export default function Home() {
           </div>
         ) : (
           /* RESULTS VIEW: Full results interface with Tabs, Actions & Previews */
-          <div className="space-y-6">
+          <div className="space-y-6 print:space-y-0">
             {/* Top Toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200 rounded-xl p-4 shadow-xs gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200 rounded-xl p-4 shadow-xs gap-3 print:hidden">
               <button
                 type="button"
                 onClick={handleReset}
@@ -299,7 +299,7 @@ export default function Home() {
             {/* Notice when browser print fallback is active */}
             {pdfNotice && (
               <div
-                className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start justify-between gap-2 shadow-2xs"
+                className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start justify-between gap-2 shadow-2xs print:hidden"
                 role="status"
               >
                 <div className="flex items-start space-x-2">
@@ -318,7 +318,7 @@ export default function Home() {
             )}
 
             {/* Navigation Tabs */}
-            <nav className="flex space-x-1 border-b border-slate-200 bg-white rounded-xl p-1.5 shadow-2xs" aria-label="Results tabs">
+            <nav className="flex space-x-1 border-b border-slate-200 bg-white rounded-xl p-1.5 shadow-2xs print:hidden" aria-label="Results tabs">
               <button
                 type="button"
                 onClick={() => setActiveTab("preview")}
@@ -388,7 +388,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-6 mt-auto">
+      <footer className="border-t border-slate-200 bg-white py-6 mt-auto print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-slate-700">ResumeCraft</span>

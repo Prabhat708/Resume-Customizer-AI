@@ -37,7 +37,7 @@ export function DiffView({
   missingRequirements = [],
 }: DiffViewProps) {
   const tailored = tailoredResumeProp || resume;
-  const [filterType, setFilterType] = useState<"all" | "reframed" | "reordered" | "warnings">("all");
+  const [filterType, setFilterType] = useState<"all" | "reframed" | "reordered" | "unchanged" | "warnings">("all");
 
   if (!tailored) {
     return (
@@ -47,7 +47,16 @@ export function DiffView({
     );
   }
 
-  // 1. Process bullets with reordering and modification status per experience entry
+  // Normalization helper to prevent trivial punctuation/whitespace differences from fabricating reframed classifications
+  const normalizeBullet = (text: string) =>
+    text
+      .replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, "")
+      .replace(/[.\s]+$/, "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+  // 1. Process bullets with provenance, rewording, and reordering classifications
   interface ProcessedBulletItem {
     company: string;
     role: string;
@@ -55,7 +64,9 @@ export function DiffView({
     currentIndex: number;
     originalIndex: number;
     isIdentical: boolean;
+    isMeaningfullyReworded: boolean;
     isReordered: boolean;
+    isPureReorder: boolean;
   }
 
   const allBullets: ProcessedBulletItem[] = [];
@@ -88,9 +99,12 @@ export function DiffView({
     const tailoredSourceIds = new Set<number>();
 
     tailoredExp.bullets.forEach((b, idx) => {
-      const isIdentical =
-        b.original_text.trim().toLowerCase() === b.tailored_text.trim().toLowerCase();
+      const normOrig = normalizeBullet(b.original_text);
+      const normTailored = normalizeBullet(b.tailored_text);
+      const isIdentical = normOrig === normTailored;
+      const isMeaningfullyReworded = !isIdentical;
       const isReordered = b.source_bullet_id !== idx;
+      const isPureReorder = isIdentical && isReordered;
       tailoredSourceIds.add(b.source_bullet_id);
 
       allBullets.push({
@@ -100,7 +114,9 @@ export function DiffView({
         currentIndex: idx,
         originalIndex: b.source_bullet_id,
         isIdentical,
+        isMeaningfullyReworded,
         isReordered,
+        isPureReorder,
       });
     });
 
@@ -121,9 +137,10 @@ export function DiffView({
   });
 
   const auditWarnings = tailored.audit_warnings || [];
-  const reframedCount = allBullets.filter((b) => !b.isIdentical).length;
-  const unchangedCount = allBullets.filter((b) => b.isIdentical).length;
-  const reorderedCount = allBullets.filter((b) => b.isReordered).length;
+  const reframedCount = allBullets.filter((b) => b.isMeaningfullyReworded).length;
+  const pureReorderCount = allBullets.filter((b) => b.isPureReorder).length;
+  const unchangedCount = allBullets.filter((b) => !b.isMeaningfullyReworded && !b.isReordered).length;
+  const totalReorderedCount = allBullets.filter((b) => b.isReordered).length;
 
   const filteredBullets = allBullets.filter((item) => {
     if (filterType === "warnings") {
@@ -134,10 +151,13 @@ export function DiffView({
       );
     }
     if (filterType === "reframed") {
-      return !item.isIdentical;
+      return item.isMeaningfullyReworded;
     }
     if (filterType === "reordered") {
       return item.isReordered;
+    }
+    if (filterType === "unchanged") {
+      return !item.isMeaningfullyReworded && !item.isReordered;
     }
     return true;
   });
@@ -195,8 +215,10 @@ export function DiffView({
 
             {/* Independent Bullets Badge */}
             <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold">
-              Experience: {allBullets.length} Bullets ({reframedCount} Reframed, {unchangedCount} Preserved
-              {reorderedCount > 0 ? `, ${reorderedCount} Reordered` : ""})
+              Experience: {allBullets.length} Bullets ({reframedCount} Reframed
+              {pureReorderCount > 0 ? `, ${pureReorderCount} Pure Reorder` : ""}
+              , {unchangedCount} Preserved
+              {totalReorderedCount > 0 && pureReorderCount === 0 ? `, ${totalReorderedCount} Reordered` : ""})
             </span>
 
             {auditWarnings.length > 0 ? (
@@ -240,6 +262,8 @@ export function DiffView({
                       className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                         change.change_type === "reframed"
                           ? "bg-indigo-100 text-indigo-700"
+                          : change.change_type === "reordered"
+                          ? "bg-purple-100 text-purple-700"
                           : change.change_type === "enhanced"
                           ? "bg-blue-100 text-blue-700"
                           : "bg-slate-200 text-slate-700"
@@ -462,7 +486,7 @@ export function DiffView({
             >
               Reframed ({reframedCount})
             </button>
-            {reorderedCount > 0 && (
+            {totalReorderedCount > 0 && (
               <button
                 type="button"
                 onClick={() => setFilterType("reordered")}
@@ -472,9 +496,20 @@ export function DiffView({
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                Reordered ({reorderedCount})
+                Reordered ({totalReorderedCount})
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setFilterType("unchanged")}
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                filterType === "unchanged"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Unchanged ({unchangedCount})
+            </button>
             {auditWarnings.length > 0 && (
               <button
                 type="button"
@@ -494,7 +529,7 @@ export function DiffView({
         {/* Bullets List */}
         <div className="space-y-4">
           {filteredBullets.map((item, idx) => {
-            const { company, role, bullet, isIdentical, isReordered, originalIndex, currentIndex } =
+            const { company, role, bullet, isMeaningfullyReworded, isReordered, isPureReorder, originalIndex, currentIndex } =
               item;
 
             return (
@@ -519,15 +554,23 @@ export function DiffView({
                         <span>Reordered ({originalIndex + 1} &rarr; {currentIndex + 1})</span>
                       </span>
                     )}
-                    <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                        isIdentical
-                          ? "bg-slate-200 text-slate-700"
-                          : "bg-indigo-100 text-indigo-700"
-                      }`}
-                    >
-                      {isIdentical ? "Unchanged (Preserved verbatim)" : "Reframed (Role-aligned)"}
-                    </span>
+                    {isPureReorder ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-purple-100 text-purple-700">
+                        Pure Reorder (Preserved verbatim)
+                      </span>
+                    ) : isMeaningfullyReworded && isReordered ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                        Reframed &amp; Reordered
+                      </span>
+                    ) : isMeaningfullyReworded ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                        Reframed (Role-aligned)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-200 text-slate-700">
+                        Unchanged (Preserved verbatim)
+                      </span>
+                    )}
                   </div>
                 </div>
 

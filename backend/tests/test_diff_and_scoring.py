@@ -260,6 +260,6 @@ def test_tailoring_change_coercion_from_unstructured_model_strings():
 
     assert len(tailored.tailoring_changes) == 3
     assert tailored.tailoring_changes[0].change_type == ChangeType.REFRAMED
-    assert tailored.tailoring_changes[1].change_type == ChangeType.REFRAMED
+    assert tailored.tailoring_changes[1].change_type == ChangeType.REORDERED
     assert tailored.tailoring_changes[2].change_type == ChangeType.ENHANCED
 

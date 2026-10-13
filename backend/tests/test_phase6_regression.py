@@ -18,10 +18,16 @@ from unittest.mock import MagicMock, patch
 import fitz
 import pytest
 
-from app.schemas.analysis import ImportanceLevel, RequirementMatch, SupportStatus
+from app.schemas.analysis import (
+    EvidenceLevel,
+    ImportanceLevel,
+    RequirementMatch,
+    SupportStatus,
+)
 from app.schemas.common import ContactInfo, ExperienceBullet, ProjectEntry
 from app.schemas.resume import ExperienceEntry, ParsedResume
-from app.schemas.tailored import TailoredResume, TailoredSkills
+from app.schemas.tailored import ChangeType, TailoredResume, TailoredSkills
+from app.services.customization_service import determine_evidence_level
 from app.services.factuality_auditor import audit_and_build_tailored_resume
 from app.services.pdf_exporter import generate_resume_pdf
 from app.services.resume_structurer import structure_raw_resume
@@ -142,6 +148,11 @@ def test_multi_section_resume_structure_integrity():
     assert "MySQL" in fruits.technologies
     assert "end-to-end order" in fruits.description or "end-to- end order" in fruits.description or "invoice management." in fruits.description
 
+    fin_app = next(p for p in parsed.projects if p.name == "Financial Services Applications")
+    assert "MongoDB" in fin_app.technologies
+    assert "Next.js" in fin_app.technologies
+    assert "Node.js" in fin_app.technologies
+
     # 4. Education integrity
     assert len(parsed.education) == 2
     edu0 = parsed.education[0]
@@ -163,6 +174,7 @@ def test_multi_section_resume_structure_integrity():
 
     assert len(parsed.certifications) >= 3
     assert any("Google Cloud" in c for c in parsed.certifications)
+    assert any("160 Days of DSA" in c for c in parsed.certifications)
 
 
 def test_wrapped_continuation_lines_and_bullet_markers():
@@ -392,3 +404,497 @@ def test_score_rounding_boundaries():
     ]
     assert calculate_match_score(reqs_none) == 0
     assert get_alignment_label(0) == "Partial Evidence Match"
+
+
+# ── 5. Source Details, Evidence Level & PDF Pagination Regression Tests ──────
+
+def test_preserve_source_details_regression():
+    """
+    Verify strict preservation of candidate source details:
+    1. '160 Days of DSA – GeeksforGeeks' is never truncated to 'Days of DSA'.
+    2. 'MongoDB' is preserved in Financial Services Applications technologies.
+    3. Both details persist through TailoredResume and extracted PDF text.
+    """
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+
+    # 1. Parsed checks
+    assert any("160 Days of DSA – GeeksforGeeks" in c for c in parsed.certifications)
+    fin_proj = next(p for p in parsed.projects if p.name == "Financial Services Applications")
+    assert "MongoDB" in fin_proj.technologies
+    assert "Next.js" in fin_proj.technologies
+    assert "Node.js" in fin_proj.technologies
+
+    # 2. Tailored checks
+    tailored = audit_and_build_tailored_resume(
+        parsed_resume=parsed,
+        raw_tailored_summary=parsed.summary,
+        raw_relevant_skills=["Python", "React.js", "Node.js", "MongoDB", "MySQL"],
+        raw_tailored_experience=[],
+        raw_tailoring_changes=[],
+    )
+    assert any("160 Days of DSA – GeeksforGeeks" in c for c in tailored.certifications)
+    tailored_fin = next(p for p in tailored.projects if p.name == "Financial Services Applications")
+    assert "MongoDB" in tailored_fin.technologies
+
+    # 3. PDF generation and text extraction
+    pdf_bytes = generate_resume_pdf(tailored)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    full_pdf_text = "\n".join(p.get_text() for p in doc)
+
+    assert "160 Days of DSA" in full_pdf_text
+    assert "Days of DSA" in full_pdf_text
+    # Ensure '160' was not stripped off
+    assert "160 Days of DSA - GeeksforGeeks" in full_pdf_text or "160 Days of DSA – GeeksforGeeks" in full_pdf_text
+
+    assert "MongoDB" in full_pdf_text
+    # Verify MongoDB is associated with Financial Services Applications
+    fin_lines = [l for l in full_pdf_text.splitlines() if "Financial Services Applications" in l or "MongoDB" in l]
+    assert any("MongoDB" in l for l in fin_lines)
+
+
+def test_evidence_level_classification_and_calibration():
+    """
+    Verify evidence level classification distinguishing employment, projects, and skills,
+    and calibrated alignment labels that do not imply unverified workplace tenure.
+    """
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+
+    # 1. Test determine_evidence_level
+    # ASP.NET / C# is in formal employment at Chandrakala Universal
+    lvl_exp = determine_evidence_level(
+        requirement="ASP.NET and C# API development",
+        evidence_quote="Designed and implemented 100+ REST APIs using ASP.NET and C#",
+        status=SupportStatus.EXPLICITLY_SUPPORTED,
+        parsed_resume=parsed,
+    )
+    assert lvl_exp == EvidenceLevel.WORK_EXPERIENCE
+
+    # React and MySQL are in FruitsWallah project
+    lvl_proj = determine_evidence_level(
+        requirement="Full-stack development with React and MySQL",
+        evidence_quote="Built a full-stack e-commerce platform using ASP.NET, React.js, MySQL, and JWT",
+        status=SupportStatus.EXPLICITLY_SUPPORTED,
+        parsed_resume=parsed,
+    )
+    assert lvl_proj == EvidenceLevel.PROJECTS
+
+    # DSA is in certification / skills
+    lvl_skill = determine_evidence_level(
+        requirement="Data structures and algorithms",
+        evidence_quote="160 Days of DSA – GeeksforGeeks",
+        status=SupportStatus.EXPLICITLY_SUPPORTED,
+        parsed_resume=parsed,
+    )
+    assert lvl_skill == EvidenceLevel.SKILLS
+
+    # Unsupported technology (e.g. Rust)
+    lvl_none = determine_evidence_level(
+        requirement="Rust systems programming",
+        evidence_quote=None,
+        status=SupportStatus.NOT_MENTIONED,
+        parsed_resume=parsed,
+    )
+    assert lvl_none == EvidenceLevel.NONE
+
+    # 2. Test alignment label calibration with evidence scope
+    reqs_mixed = [
+        RequirementMatch(
+            requirement="Python",
+            importance=ImportanceLevel.REQUIRED,
+            status=SupportStatus.EXPLICITLY_SUPPORTED,
+            evidence_level=EvidenceLevel.WORK_EXPERIENCE,
+            notes="",
+        ),
+        RequirementMatch(
+            requirement="React.js",
+            importance=ImportanceLevel.REQUIRED,
+            status=SupportStatus.EXPLICITLY_SUPPORTED,
+            evidence_level=EvidenceLevel.PROJECTS,
+            notes="",
+        ),
+        RequirementMatch(
+            requirement="MySQL",
+            importance=ImportanceLevel.REQUIRED,
+            status=SupportStatus.EXPLICITLY_SUPPORTED,
+            evidence_level=EvidenceLevel.PROJECTS,
+            notes="",
+        ),
+    ]
+    score_mixed = calculate_match_score(reqs_mixed)
+    assert score_mixed == 100
+
+    # Calibration check: score is 100%, but label accurately specifies (Skills & Projects)
+    label_mixed = get_alignment_label(score_mixed, reqs_mixed)
+    assert label_mixed == "Strong Evidence Alignment (Skills & Projects)"
+
+    methodology = build_scoring_methodology_text(reqs_mixed, score_mixed)
+    assert "Points achieved: 4.5 / 4.5 = 100% (Strong Evidence Alignment (Skills & Projects))" in methodology
+    assert "1 in primary employment" in methodology
+    assert "2 in project portfolio" in methodology
+    assert "does not imply verified primary employment tenure" in methodology
+
+    # Pure workplace evidence should be labeled as workplace alignment
+    reqs_pure_work = [
+        RequirementMatch(
+            requirement="ASP.NET",
+            importance=ImportanceLevel.REQUIRED,
+            status=SupportStatus.EXPLICITLY_SUPPORTED,
+            evidence_level=EvidenceLevel.WORK_EXPERIENCE,
+            notes="",
+        ),
+    ]
+    assert get_alignment_label(100, reqs_pure_work) == "Strong Workplace Evidence Alignment"
+
+
+def test_pdf_pagination_balance():
+    """
+    Verify that multi-page resume targets exactly 2 balanced pages:
+    - Page 1 contains Contact, Summary, Skills, and Experience (>= 1200 chars).
+    - Page 2 contains Projects, Education, Achievements, Certifications (>= 1800 chars).
+    - Avoids a sparsely populated final page and prevents broken project blocks.
+    """
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+    tailored = audit_and_build_tailored_resume(
+        parsed_resume=parsed,
+        raw_tailored_summary=parsed.summary,
+        raw_relevant_skills=["Python", "React.js", "Node.js", "MongoDB", "MySQL"],
+        raw_tailored_experience=[],
+        raw_tailoring_changes=[],
+    )
+
+    pdf_bytes = generate_resume_pdf(tailored)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    assert len(doc) == 2, f"Expected 2 balanced pages, got {len(doc)}"
+
+    p1_text = doc[0].get_text()
+    p2_text = doc[1].get_text()
+
+    # Verify content volume per page (balanced, no sparse final page or half-empty first page)
+    assert len(p1_text) >= 1800, f"Page 1 has only {len(p1_text)} chars"
+    assert len(p2_text) >= 1400, f"Page 2 has only {len(p2_text)} chars"
+
+    # Verify section separation
+    assert "Prabhat Verma" in p1_text
+    assert "PROFESSIONAL EXPERIENCE" in p1_text
+    assert "Chandrakala Universal" in p1_text
+    assert "KEY PROJECTS" in p1_text
+    assert "PyBgWorker" in p1_text
+
+    assert "KEY PROJECTS" in p2_text
+    assert "FruitsWallah" in p2_text
+    assert "Financial Services Applications" in p2_text
+    assert "EDUCATION" in p2_text
+    assert "ACHIEVEMENTS" in p2_text
+    assert "CERTIFICATIONS" in p2_text
+    assert "160 Days of DSA" in p2_text
+
+
+def test_summary_factuality_sanitization_separates_employment_and_projects():
+    """
+    Verify that summary sanitization strictly separates claims:
+    - 100+ production REST APIs must be tied to ASP.NET / C# in primary employment.
+    - MySQL and MongoDB must be qualified as project implementations and not claimed in production.
+    """
+    from app.services.factuality_auditor import sanitize_summary_factuality
+
+    conflated_summary = (
+        "Full-stack Software Engineer with 1+ year of experience developing scalable web applications, "
+        "backend services, and automated data processing tools using Python, React.js, Node.js, and ASP.NET. "
+        "Proven background delivering 100+ production REST APIs, implementing database-driven solutions "
+        "with MySQL and MongoDB across production and project environments, and publishing open-source tooling."
+    )
+
+    sanitized = sanitize_summary_factuality(conflated_summary)
+    assert sanitized is not None
+    # Must not claim MySQL or MongoDB across production
+    assert "across production and project environments" not in sanitized
+    assert "MySQL and MongoDB across production" not in sanitized
+    # Must attribute 100+ production APIs to employment / ASP.NET
+    assert "100+ production REST APIs using ASP.NET" in sanitized or "100+ production REST APIs" in sanitized
+    assert "primary employment" in sanitized or "enterprise employment" in sanitized
+    # Must qualify database experience as project solutions
+    assert "project" in sanitized.lower()
+
+
+def test_experience_bullet_reordering_preserves_provenance_and_order():
+    """
+    Verify that when model reorders experience bullets with valid source_bullet_id,
+    provenance is preserved, bullet order reflects the model's prioritization,
+    and tailoring_changes records a reordered classification.
+    """
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+    assert len(parsed.experience) > 0
+    orig_bullets = parsed.experience[0].bullets
+    assert len(orig_bullets) >= 4
+
+    # Model intentionally prioritizes Python bullet (source_bullet_id=2) first,
+    # then 100+ APIs bullet (source_bullet_id=1), then systems bullet (source_bullet_id=0)
+    reordered_model_bullets = [
+        {
+            "source_bullet_id": 2,
+            "tailored_text": orig_bullets[2].text,
+            "rationale": "Prioritized Python desktop OMR accomplishment for Python JD relevance.",
+        },
+        {
+            "source_bullet_id": 1,
+            "tailored_text": orig_bullets[1].text,
+            "rationale": "Highlighted high-throughput REST API delivery.",
+        },
+        {
+            "source_bullet_id": 0,
+            "tailored_text": orig_bullets[0].text,
+            "rationale": "Maintained core system engineering experience.",
+        },
+    ]
+
+    tailored = audit_and_build_tailored_resume(
+        parsed_resume=parsed,
+        raw_tailored_summary="Clean summary",
+        raw_relevant_skills=["Python", "ASP.NET"],
+        raw_tailored_experience=[
+            {
+                "company": parsed.experience[0].company,
+                "role": parsed.experience[0].role,
+                "bullets": reordered_model_bullets,
+            }
+        ],
+        raw_tailoring_changes=[
+            {"section": "Experience", "change_type": "reordered", "reasoning": "Prioritized Python achievements."}
+        ],
+    )
+
+    exp = tailored.experience[0]
+    # Check that first bullet has source_bullet_id=2 and matches original text 2
+    assert exp.bullets[0].source_bullet_id == 2
+    assert exp.bullets[0].original_text == orig_bullets[2].text
+    # Check that second bullet has source_bullet_id=1 and matches original text 1
+    assert exp.bullets[1].source_bullet_id == 1
+    assert exp.bullets[1].original_text == orig_bullets[1].text
+    # Check that third bullet has source_bullet_id=0 and matches original text 0
+    assert exp.bullets[2].source_bullet_id == 0
+    assert exp.bullets[2].original_text == orig_bullets[0].text
+    # Check that remaining 4th bullet was retained
+    assert any(b.source_bullet_id == 3 for b in exp.bullets)
+
+    # Check tailoring_changes includes reordered
+    change_types = [c.change_type for c in tailored.tailoring_changes]
+    assert ChangeType.REORDERED in change_types
+
+
+def test_browser_print_pagination_letter_and_a4(tmp_path):
+    """
+    Independent browser layout engine test verifying that the printed Resume Preview
+    produces exactly 2 pages on both Letter and A4 sizes.
+    Verifies:
+    1. Page 1 contains candidate contact info, summary, skills, experience, and 'Page 1 of 2'.
+    2. Page 2 contains projects, education, achievements, certifications, and 'Page 2 of 2'.
+    3. No overflow to page 3, no dropped sections, and no double page breaks.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    chrome_candidates = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        shutil.which("chrome"),
+        shutil.which("google-chrome"),
+        shutil.which("msedge"),
+        shutil.which("chromium"),
+    ]
+    browser_bin = next((c for c in chrome_candidates if c and os.path.isfile(c)), None)
+    if not browser_bin:
+        pytest.skip("No headless browser (Chrome/Edge) found for browser print pagination test")
+
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+    contact = parsed.contact_info
+
+    summary = (
+        "Software Engineer with 1+ year of experience building scalable backend services, high-throughput desktop "
+        "systems, and full-stack solutions. Proven track record delivering 100+ production REST APIs using ASP.NET "
+        "and C#, high-performance data processing systems in Python, and full-stack project implementations "
+        "incorporating React.js, Node.js, and MySQL."
+    )
+
+    skills_rel = ["Python", "React.js", "Node.js", "MySQL", "JavaScript", "RESTful APIs", "Database Design", "Git"]
+    skills_oth = ["C#", "ASP.NET Web API", "Next.js", "PostgreSQL", "MongoDB", "SQLite", "GitHub", "JWT", "System Design", "Postman"]
+
+    exp_bullets = [
+        "Engineered and maintained 4 production-grade systems, including an Educational Management Portal, ERP Tools, an OMR Processing Platform, and a Ticket Management System.",
+        "Architected and deployed 100+ production REST APIs using ASP.NET and C# to power authentication, reporting, business workflows, and payment integrations.",
+        "Developed a high-throughput Python desktop application for OMR processing that handled 1.8M+ sheets within 15 days, accelerating result processing from weeks to days.",
+        "Optimized high-volume data processing pipelines handling 50K+ records and integrated automated reporting and label generation workflows."
+    ]
+
+    links_html = "".join([f'<span>{l}</span> &bull; ' for l in (contact.links or [])])
+    skills_rel_html = "".join([f'<span class="resume-tag">{s}</span> ' for s in skills_rel])
+    skills_oth_html = "".join([f'<span class="resume-tag">{s}</span> ' for s in skills_oth])
+    exp_li = "".join([f'<li class="resume-bullet-text">{b}</li>' for b in exp_bullets])
+
+    def render_proj(p):
+        desc_lines = [l.strip() for l in p.description.split("\n") if l.strip()]
+        if len(desc_lines) > 1:
+            desc_content = '<ul class="resume-bullet-list" style="list-style-type: disc;">' + "".join([f'<li class="resume-bullet-text">{l.lstrip("•*-◦ ")}</li>' for l in desc_lines]) + '</ul>'
+        else:
+            desc_content = f'<p class="resume-entry-body">{p.description}</p>'
+        tags = "".join([f'<span class="resume-tag">{t}</span> ' for t in (p.technologies or [])])
+        return f"""
+        <div class="resume-project-item break-inside-avoid">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <span style="font-weight: bold; font-size: 0.75rem;">{p.name}</span>
+            {f'<span style="font-size: 0.65rem; color: #4f46e5;">{p.url}</span>' if p.url else ''}
+          </div>
+          {desc_content}
+          <div style="margin-top: 2px;">{tags}</div>
+        </div>
+        """
+
+    proj1_html = "".join([render_proj(p) for p in parsed.projects[:1]])
+    proj2_html = "".join([render_proj(p) for p in parsed.projects[1:]])
+
+    edu_html = ""
+    for ed in parsed.education:
+        edu_html += f"""
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;" class="break-inside-avoid">
+          <div>
+            <span style="font-weight: bold; font-size: 0.75rem;">{ed.degree}</span>
+            <span style="color: #475569; font-size: 0.7rem; margin-left: 6px;">{ed.institution}</span>
+            {f'<div style="font-size: 0.65rem; color: #64748b;">{ed.details}</div>' if ed.details else ''}
+          </div>
+          <span style="font-size: 0.65rem; color: #64748b; font-family: monospace;">{ed.dates}</span>
+        </div>
+        """
+
+    ach_html = "".join([f'<li class="resume-bullet-text break-inside-avoid">{a.lstrip("•*-◦ ")}</li>' for a in parsed.achievements])
+    cert_html = "".join([f'<li class="resume-bullet-text break-inside-avoid">{c.lstrip("•*-◦ ")}</li>' for c in parsed.certifications])
+
+    def render_template(page_size: str) -> str:
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #0f172a; background: #ffffff; line-height: 1.35; }}
+@media print {{
+  @page {{ size: {page_size}; margin: 0.35in 0.4in; }}
+  body {{ background: #ffffff !important; color: #0f172a !important; }}
+  header:not(.resume-header), footer:not(.resume-footer), nav, button, .no-print {{ display: none !important; }}
+  .resume-header, header.resume-header {{ display: block !important; }}
+  .print-page-1 {{ break-after: page !important; page-break-after: always !important; }}
+  .print-page-2 {{ break-after: auto !important; page-break-after: auto !important; }}
+  .break-inside-avoid {{ break-inside: avoid !important; page-break-inside: avoid !important; }}
+  .resume-sheet {{ padding: 0 !important; border: none !important; box-shadow: none !important; max-width: 100% !important; background: transparent !important; }}
+  .resume-section {{ margin-bottom: 0.5rem !important; }}
+  .resume-section-heading {{ margin-bottom: 0.25rem !important; padding-bottom: 0.125rem !important; font-size: 0.72rem !important; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #e2e8f0; }}
+  .resume-entry-title {{ font-size: 0.8rem !important; line-height: 1.15rem !important; }}
+  .resume-entry-body, .resume-bullet-text {{ font-size: 0.6875rem !important; line-height: 0.9375rem !important; color: #334155; }}
+  .resume-bullet-list {{ margin-top: 0.2rem !important; margin-bottom: 0 !important; padding-left: 1.1rem !important; }}
+  .resume-bullet-list li {{ margin-bottom: 0.125rem !important; }}
+  .resume-project-item {{ margin-bottom: 0.35rem !important; }}
+  .resume-tag {{ font-size: 0.5625rem !important; padding: 0.05rem 0.25rem !important; line-height: 0.85rem !important; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px; display: inline-block; color: #475569; }}
+  .resume-footer {{ margin-top: 0.35rem !important; padding-top: 0.2rem !important; border-top: 1px solid #f1f5f9; font-size: 0.6rem; color: #94a3b8; display: flex; justify-content: space-between; }}
+}}
+</style>
+</head>
+<body>
+<article class="resume-sheet print-page-1">
+  <header class="resume-header" style="border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 8px;">
+    <h1 style="font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-bottom: 3px;">{contact.name}</h1>
+    <div style="font-size: 0.6875rem; color: #475569;">
+      <span>{contact.email}</span> &bull; <span>{contact.phone}</span> &bull; <span>{contact.location}</span> &bull; {links_html}
+    </div>
+  </header>
+  <section class="resume-section">
+    <div class="resume-section-heading">Professional Summary</div>
+    <p class="resume-entry-body" style="background: #f8fafc; padding: 6px; border: 1px solid #f1f5f9; border-radius: 4px;">{summary}</p>
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Technical & Core Skills</div>
+    <div style="margin-bottom: 4px;"><div>{skills_rel_html}</div></div>
+    <div><div>{skills_oth_html}</div></div>
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Professional Experience</div>
+    <div style="margin-bottom: 6px;" class="break-inside-avoid">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <div>
+          <span class="resume-entry-title" style="font-weight: bold;">Software Engineer</span>
+          <span style="font-weight: 600; color: #4338ca; font-size: 0.72rem; margin-left: 6px;">Chandrakala Universal PVT. LTD.</span>
+        </div>
+        <span style="font-size: 0.65rem; color: #64748b; font-family: monospace;">Aug 2025 - Present</span>
+      </div>
+      <ul class="resume-bullet-list" style="list-style-type: disc;">{exp_li}</ul>
+    </div>
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Key Projects</div>
+    {proj1_html}
+  </section>
+  <div class="resume-footer">
+    <span>{contact.name} &bull; Tailored Resume</span>
+    <span>Page 1 of 2</span>
+  </div>
+</article>
+<article class="resume-sheet print-page-2">
+  <section class="resume-section">
+    <div class="resume-section-heading">Key Projects (Continued)</div>
+    {proj2_html}
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Education</div>
+    {edu_html}
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Achievements</div>
+    <ul class="resume-bullet-list" style="list-style-type: disc;">{ach_html}</ul>
+  </section>
+  <section class="resume-section">
+    <div class="resume-section-heading">Certifications</div>
+    <ul class="resume-bullet-list" style="list-style-type: disc;">{cert_html}</ul>
+  </section>
+  <div class="resume-footer">
+    <span>{contact.name} &bull; Tailored Resume</span>
+    <span>Page 2 of 2</span>
+  </div>
+</article>
+</body>
+</html>"""
+
+    for page_size in ("letter", "a4"):
+        html_file = tmp_path / f"resume_{page_size}.html"
+        pdf_file = tmp_path / f"resume_{page_size}.pdf"
+        html_file.write_text(render_template(page_size), encoding="utf-8")
+
+        subprocess.run(
+            [browser_bin, "--headless=new", f"--print-to-pdf={str(pdf_file)}", "--no-pdf-header-footer", str(html_file)],
+            check=True,
+            capture_output=True,
+        )
+
+        doc = fitz.open(str(pdf_file))
+        assert len(doc) == 2, f"Expected exactly 2 pages for {page_size}, got {len(doc)}"
+
+        # Page 1 checks
+        p1_text = doc[0].get_text()
+        assert "Prabhat Verma" in p1_text
+        assert "Page 1 of 2" in p1_text
+        assert "PROFESSIONAL SUMMARY" in p1_text
+        assert "PROFESSIONAL EXPERIENCE" in p1_text
+        assert "Chandrakala Universal" in p1_text
+        assert "KEY PROJECTS" in p1_text
+        assert "PyBgWorker" in p1_text
+
+        # Page 2 checks
+        p2_text = doc[1].get_text()
+        assert "KEY PROJECTS" in p2_text
+        assert "Financial Services Applications" in p2_text
+        assert "EDUCATION" in p2_text
+        assert "ACHIEVEMENTS" in p2_text
+        assert "CERTIFICATIONS" in p2_text
+        assert "Page 2 of 2" in p2_text
+
+        doc.close()
+
+

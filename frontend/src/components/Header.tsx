@@ -12,7 +12,7 @@ interface HeaderProps {
 
 export function Header({ health, healthError, loading }: HeaderProps) {
   return (
-    <header className="border-b border-slate-200 bg-white sticky top-0 z-30 shadow-xs">
+    <header className="border-b border-slate-200 bg-white sticky top-0 z-30 shadow-xs print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3 gap-3">
           {/* Logo & Product Name */}
