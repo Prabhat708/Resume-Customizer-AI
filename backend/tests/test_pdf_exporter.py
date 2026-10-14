@@ -119,7 +119,7 @@ def _make_sample_resume(
 
 
 def test_pdf_export_short_resume():
-    """Generates a valid short resume and verifies reopening with PyMuPDF."""
+    """Generates a valid short resume and verifies reopening with PyMuPDF on A4 paper."""
     resume = _make_sample_resume(experience_count=1, bullets_per_exp=2)
     pdf_bytes = generate_resume_pdf(resume)
 
@@ -129,7 +129,11 @@ def test_pdf_export_short_resume():
 
     # Reopen with PyMuPDF
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    assert doc.page_count >= 1
+    # Short resume fits on 1 page and does not create an unnecessary blank page
+    assert doc.page_count == 1
+    assert doc[0].rect.width == pytest.approx(595.28, abs=0.5)
+    assert doc[0].rect.height == pytest.approx(841.89, abs=0.5)
+
     page_text = doc[0].get_text()
 
     # Verify key sections and contact info appear in extracted text
@@ -149,21 +153,66 @@ def test_pdf_export_short_resume():
 
 
 def test_pdf_export_long_multipage_resume():
-    """Generates a long resume that spans multiple pages cleanly without clipping."""
+    """Generates a long resume that spans multiple A4 pages cleanly without clipping."""
     resume = _make_sample_resume(experience_count=6, bullets_per_exp=5)
     pdf_bytes = generate_resume_pdf(resume)
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     assert doc.page_count >= 2
 
-    # Check that text is selectable on every page
+    # Check that text is selectable on every page, page dimensions are A4, and NO footer text appears
     for i in range(doc.page_count):
+        assert doc[i].rect.width == pytest.approx(595.28, abs=0.5)
+        assert doc[i].rect.height == pytest.approx(841.89, abs=0.5)
         text = doc[i].get_text()
         assert len(text.strip()) > 100
-        # Check page footer text on subsequent pages
-        if doc.page_count > 1 and i > 0:
-            assert f"Page {i + 1} of {doc.page_count}" in text
+        # Confirm zero footer text or page numbers
+        assert "Page " not in text
+        assert "Tailored Resume" not in text
     doc.close()
+
+
+def test_pdf_export_a4_page_dimensions_and_no_forced_page_breaks():
+    """Verify strictly A4 page dimensions and that no unconditional PageBreak() flowables exist."""
+    import inspect
+    from app.services import pdf_exporter
+
+    source_code = inspect.getsource(pdf_exporter.generate_resume_pdf)
+    assert "PageBreak()" not in source_code, "pdf_exporter should not contain unconditional PageBreak() calls"
+    assert "accumulated_chars" not in source_code, "pdf_exporter should not use character counts to break pages"
+
+    resume = _make_sample_resume(experience_count=2, bullets_per_exp=3)
+    pdf_bytes = generate_resume_pdf(resume)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    for page in doc:
+        # A4 standard size is 595.276 x 841.890 points
+        assert page.rect.width == pytest.approx(595.28, abs=0.5)
+        assert page.rect.height == pytest.approx(841.89, abs=0.5)
+    doc.close()
+
+
+def test_pdf_export_no_footers_or_page_numbers():
+    """Verify that both single-page and multi-page resumes contain zero footers, page numbers, or decorative lines."""
+    # 1. Single-page resume
+    short_pdf = generate_resume_pdf(_make_sample_resume(experience_count=1, bullets_per_exp=2))
+    doc_short = fitz.open(stream=short_pdf, filetype="pdf")
+    assert doc_short.page_count == 1
+    p_text = doc_short[0].get_text()
+    assert "Page 1" not in p_text
+    assert "Tailored Resume" not in p_text
+    doc_short.close()
+
+    # 2. Multi-page resume
+    long_pdf = generate_resume_pdf(_make_sample_resume(experience_count=6, bullets_per_exp=5))
+    doc_long = fitz.open(stream=long_pdf, filetype="pdf")
+    assert doc_long.page_count >= 2
+    for p in doc_long:
+        text = p.get_text()
+        assert "Page 1 of" not in text
+        assert "Page 2 of" not in text
+        assert "Tailored Resume" not in text
+    doc_long.close()
 
 
 def test_pdf_export_long_bullets_and_long_urls():
@@ -316,4 +365,40 @@ def test_export_pdf_endpoint_internal_error_returns_error_response():
         assert "error" in data
         assert data["error"]["code"] == "INTERNAL_ERROR"
         assert "Failed to generate resume PDF" in data["error"]["message"]
+
+
+def test_pdf_export_page1_space_utilization():
+    """Verifies that a realistic 2-page resume fully utilizes the vertical printable space on page 1 (>85% fill) without premature page splitting."""
+    from tests.test_phase6_regression import SYNTHETIC_MULTI_SECTION_RESUME
+    from app.services.resume_structurer import structure_raw_resume
+    from app.services.factuality_auditor import audit_and_build_tailored_resume
+
+    parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
+    tailored = audit_and_build_tailored_resume(
+        parsed_resume=parsed,
+        raw_tailored_summary="Software Engineer with 1+ year of experience developing enterprise tools and backend services, with hands-on full-stack project experience. Proven employment track record of delivering 100+ production REST APIs using ASP.NET and C# alongside high-performance Python desktop systems. Additional project experience building full-stack applications and backend services with React.js, Node.js, and MySQL.",
+        raw_relevant_skills=["Python", "React.js", "Node.js", "MySQL", "RESTful APIs", "Database Design", "JavaScript"],
+        raw_tailored_experience=[],
+        raw_tailoring_changes=[],
+    )
+
+    pdf_bytes = generate_resume_pdf(tailored)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    assert doc.page_count == 2, f"Expected 2 pages, got {doc.page_count}"
+
+    p1 = doc[0]
+    blocks = p1.get_text("blocks")
+    first_y = blocks[0][1]
+    last_y = blocks[-1][3]
+    printable_h = 841.89 - (2 * 36)
+    used_h = last_y - first_y
+    fill_ratio = used_h / printable_h
+
+    # Page 1 must utilize at least 85% of available vertical height
+    assert fill_ratio >= 0.85, f"Page 1 vertical space utilization was {fill_ratio:.1%}, leaving excessive blank space"
+    # FruitsWallah project content should be present on page 1 rather than pushed to page 2 leaving blank space
+    p1_text = p1.get_text()
+    assert "FruitsWallah" in p1_text, "FruitsWallah was prematurely pushed to page 2"
+    doc.close()
+
 

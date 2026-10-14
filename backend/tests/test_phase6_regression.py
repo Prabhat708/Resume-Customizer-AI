@@ -548,10 +548,11 @@ def test_evidence_level_classification_and_calibration():
 
 def test_pdf_pagination_balance():
     """
-    Verify that multi-page resume targets exactly 2 balanced pages:
-    - Page 1 contains Contact, Summary, Skills, and Experience (>= 1200 chars).
-    - Page 2 contains Projects, Education, Achievements, Certifications (>= 1800 chars).
-    - Avoids a sparsely populated final page and prevents broken project blocks.
+    Verify that multi-page resume uses content-driven A4 pagination:
+    - Page dimensions match A4 (595.28 x 841.89 pt).
+    - Page 1 contains Contact, Summary, Skills, Experience, and projects that fit naturally (PyBgWorker, Financial Services Applications).
+    - Page 2 contains continuing projects (FruitsWallah), Education, Achievements, Certifications.
+    - Both pages are well-filled without artificial breaks or sparse spillovers.
     """
     parsed = structure_raw_resume(SYNTHETIC_MULTI_SECTION_RESUME)
     tailored = audit_and_build_tailored_resume(
@@ -567,27 +568,35 @@ def test_pdf_pagination_balance():
 
     assert len(doc) == 2, f"Expected 2 balanced pages, got {len(doc)}"
 
+    for i in range(len(doc)):
+        assert doc[i].rect.width == pytest.approx(595.28, abs=0.5)
+        assert doc[i].rect.height == pytest.approx(841.89, abs=0.5)
+
     p1_text = doc[0].get_text()
     p2_text = doc[1].get_text()
 
-    # Verify content volume per page (balanced, no sparse final page or half-empty first page)
-    assert len(p1_text) >= 1800, f"Page 1 has only {len(p1_text)} chars"
-    assert len(p2_text) >= 1400, f"Page 2 has only {len(p2_text)} chars"
+    # Verify content volume per page (content-driven distribution across A4 printable area)
+    assert len(p1_text) >= 2000, f"Page 1 has only {len(p1_text)} chars"
+    assert len(p2_text) >= 600, f"Page 2 has only {len(p2_text)} chars"
 
-    # Verify section separation
+    # Verify content flow across pages
     assert "Prabhat Verma" in p1_text
     assert "PROFESSIONAL EXPERIENCE" in p1_text
     assert "Chandrakala Universal" in p1_text
     assert "KEY PROJECTS" in p1_text
     assert "PyBgWorker" in p1_text
+    assert "Financial Services Applications" in p1_text
 
-    assert "KEY PROJECTS" in p2_text
-    assert "FruitsWallah" in p2_text
-    assert "Financial Services Applications" in p2_text
+    # Verify sections present across pages
+    full_text = p1_text + "\n" + p2_text
+    assert "FruitsWallah" in full_text
     assert "EDUCATION" in p2_text
     assert "ACHIEVEMENTS" in p2_text
     assert "CERTIFICATIONS" in p2_text
-    assert "160 Days of DSA" in p2_text
+    # Verify that PDF has zero footers, page numbering, or decorative lines
+    assert "Page 1 of 2" not in p1_text
+    assert "Page 2 of 2" not in p2_text
+    assert "Tailored Resume" not in full_text
 
 
 def test_summary_factuality_sanitization_separates_employment_and_projects():

@@ -5,12 +5,14 @@ Key Design & ATS Standards:
 - Built strictly with ReportLab Platypus (SimpleDocTemplate, Paragraph, Spacer, Table).
 - Generates directly from the validated TailoredResume Pydantic schema (never HTML scraping).
 - Single-column linear reading order for ATS parsers and text extractors.
+- A4 page dimensions (reportlab.lib.pagesizes.A4) with consistent professional margins.
+- Content-driven dynamic pagination: zero forced PageBreak() calls; ReportLab calculates rendered height.
+- Section headings and entry lead-ins protected with KeepTogether to prevent orphan headings.
 - Embedded TrueType Unicode font family (Arial/SegoeUI) when available with Helvetica fallback.
 - TrueType embedding preserves international characters (accents, umlauts, Cyrillic, Greek, Polish)
   in extracted text rather than replacing them with lossy ASCII approximations.
-- Comprehensive XML character escaping (prevents ReportLab XML markup injection or parser crashes).
-- Dynamic page layout supporting multi-page resumes without clipping or overlapping.
-- Handles missing optional sections cleanly (no orphan headers).
+- Clean ATS layout: zero footers, page numbering, or decorative footer lines per ATS standards.
+- Handles missing optional sections cleanly (no orphan headers or empty spacers).
 - Generates deterministic, privacy-conscious filenames.
 """
 from __future__ import annotations
@@ -23,17 +25,15 @@ from xml.sax.saxutils import escape as sax_escape
 from typing import List, Optional
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     HRFlowable,
     KeepTogether,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -198,35 +198,11 @@ def _clean_bullet_text(text: str) -> str:
 
 class NumberedCanvas(canvas.Canvas):
     """
-    Two-pass canvas to dynamically compute and render 'Page X of Y' footers
-    cleanly when multi-page documents are generated.
+    Canvas for ATS PDF generation.
+    Footer text, separator lines, and page numbers have been completely removed
+    to ensure a clean, distraction-free document layout per ATS specifications.
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._saved_page_states = []
-
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self):
-        num_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.draw_page_number(num_pages)
-            canvas.Canvas.showPage(self)
-        canvas.Canvas.save(self)
-
-    def draw_page_number(self, page_count: int):
-        # Only show page numbers if document spans more than 1 page
-        if page_count > 1:
-            self.saveState()
-            self.setFont(_REGULAR_FONT, 8)
-            self.setFillColor(colors.HexColor("#64748B"))  # Slate-500
-            page_text = f"Page {self._pageNumber} of {page_count}"
-            self.drawRightString(letter[0] - 36, 20, page_text)
-            self.restoreState()
+    pass
 
 
 # ── PDF Exporter Service ──────────────────────────────────────────────────────
@@ -234,16 +210,17 @@ class NumberedCanvas(canvas.Canvas):
 def generate_resume_pdf(resume: TailoredResume) -> bytes:
     """
     Generate an ATS-optimized, high-fidelity PDF from the validated TailoredResume schema.
+    Uses A4 paper geometry and pure content-driven ReportLab Platypus pagination.
     Returns the raw PDF binary content as bytes.
     """
     _initialize_fonts()
     buffer = io.BytesIO()
 
-    # Geometry: Letter size, 0.5 in (36 pt) side margins, 0.5 in (36 pt) top/bottom
+    # Geometry: A4 page size (595.28 x 841.89 pt), 36 pt (0.5 in) margins (printable width: 523.28 pt)
     margin = 36
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=letter,
+        pagesize=A4,
         leftMargin=margin,
         rightMargin=margin,
         topMargin=margin,
@@ -252,9 +229,9 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         author=resume.contact_info.name,
     )
 
-    content_width = letter[0] - (2 * margin)
+    content_width = A4[0] - (2 * margin)
 
-    # Styles
+    # Reusable typography styles
     base_styles = getSampleStyleSheet()
 
     name_style = ParagraphStyle(
@@ -265,18 +242,19 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         leading=22,
         alignment=TA_CENTER,
         textColor=colors.HexColor("#0F172A"),  # Slate-900
-        spaceAfter=3,
+        spaceAfter=2,
     )
 
     contact_style = ParagraphStyle(
         "ResumeContact",
         parent=base_styles["Normal"],
         fontName=_REGULAR_FONT,
-        fontSize=8.5,
-        leading=11,
+        fontSize=9,
+        leading=12,
         alignment=TA_CENTER,
         textColor=colors.HexColor("#334155"),  # Slate-700
-        spaceAfter=10,
+        spaceBefore=2,
+        spaceAfter=6,
     )
 
     section_heading_style = ParagraphStyle(
@@ -284,10 +262,10 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         parent=base_styles["Normal"],
         fontName=_BOLD_FONT,
         fontSize=10.5,
-        leading=13,
+        leading=13.5,
         textColor=colors.HexColor("#1E293B"),  # Slate-800
-        spaceBefore=8,
-        spaceAfter=3,
+        spaceBefore=0,
+        spaceAfter=0,
         keepWithNext=True,
     )
 
@@ -295,39 +273,40 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         "ResumeBody",
         parent=base_styles["Normal"],
         fontName=_REGULAR_FONT,
-        fontSize=8.5,
-        leading=12,
+        fontSize=10,
+        leading=13.5,
         textColor=colors.HexColor("#1E293B"),
-        spaceAfter=4,
+        spaceAfter=2.5,
     )
 
     bullet_style = ParagraphStyle(
         "ResumeBullet",
         parent=base_styles["Normal"],
         fontName=_REGULAR_FONT,
-        fontSize=8.5,
-        leading=11.5,
+        fontSize=10,
+        leading=13.5,
         textColor=colors.HexColor("#1E293B"),
         leftIndent=14,
         firstLineIndent=-10,
-        spaceAfter=2.5,
+        spaceAfter=2.0,
     )
 
     entry_title_style = ParagraphStyle(
         "ResumeEntryTitle",
         parent=base_styles["Normal"],
         fontName=_BOLD_FONT,
-        fontSize=9,
-        leading=12,
+        fontSize=10.5,
+        leading=13.5,
         textColor=colors.HexColor("#0F172A"),
+        keepWithNext=True,
     )
 
     entry_subtitle_style = ParagraphStyle(
         "ResumeEntrySubtitle",
         parent=base_styles["Normal"],
         fontName=_ITALIC_FONT,
-        fontSize=8.5,
-        leading=11,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#475569"),
     )
 
@@ -335,11 +314,24 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         "ResumeEntryDate",
         parent=base_styles["Normal"],
         fontName=_REGULAR_FONT,
-        fontSize=8.5,
-        leading=11,
-        alignment=TA_LEFT,
+        fontSize=9,
+        leading=12,
+        alignment=TA_RIGHT,
         textColor=colors.HexColor("#475569"),
     )
+
+    def make_section_header(title: str) -> List:
+        return [
+            Spacer(1, 8),
+            Paragraph(title.upper(), section_heading_style),
+            HRFlowable(
+                width="100%",
+                thickness=0.75,
+                color=colors.HexColor("#CBD5E1"),  # Slate-300
+                spaceBefore=1.5,
+                spaceAfter=4,
+            ),
+        ]
 
     story = []
 
@@ -363,36 +355,24 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
         contact_line = " &nbsp;|&nbsp; ".join(contact_parts)
         story.append(Paragraph(contact_line, contact_style))
 
-    def add_section_divider(heading_text: str):
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(heading_text.upper(), section_heading_style))
-        story.append(
-            HRFlowable(
-                width="100%",
-                thickness=0.75,
-                color=colors.HexColor("#CBD5E1"),  # Slate-300
-                spaceBefore=1,
-                spaceAfter=5,
-            )
-        )
-
     # 2. Professional Summary (Optional)
     if resume.summary and resume.summary.strip():
-        add_section_divider("Professional Summary")
         summary_escaped = _sanitize_and_escape(resume.summary.strip())
-        story.append(Paragraph(summary_escaped, body_style))
+        summary_para = Paragraph(summary_escaped, body_style)
+        # Keep section heading together with its summary paragraph
+        story.append(KeepTogether(make_section_header("Professional Summary") + [summary_para]))
 
     # 3. Technical & Core Skills
     has_relevant_skills = bool(resume.skills.retained_relevant)
     has_other_skills = bool(resume.skills.retained_other)
 
     if has_relevant_skills or has_other_skills:
-        add_section_divider("Technical Skills")
+        skills_flowables = []
         if has_relevant_skills:
             relevant_str = ", ".join(
                 _sanitize_and_escape(s) for s in resume.skills.retained_relevant
             )
-            story.append(
+            skills_flowables.append(
                 Paragraph(
                     f"<b>Relevant Skills:</b> {relevant_str}",
                     body_style,
@@ -402,16 +382,23 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
             other_str = ", ".join(
                 _sanitize_and_escape(s) for s in resume.skills.retained_other
             )
-            story.append(
+            skills_flowables.append(
                 Paragraph(
                     f"<b>Additional Skills:</b> {other_str}",
                     body_style,
                 )
             )
 
+        if skills_flowables:
+            # Keep section heading together with at least the first skill line
+            story.append(KeepTogether(make_section_header("Technical Skills") + skills_flowables[:1]))
+            for extra_skill in skills_flowables[1:]:
+                story.append(extra_skill)
+
     # 4. Professional Experience
     if resume.experience:
-        add_section_divider("Professional Experience")
+        exp_header = make_section_header("Professional Experience")
+        first_exp = True
 
         for exp in resume.experience:
             exp_elements = []
@@ -445,7 +432,7 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                         ("LEFTPADDING", (0, 0), (-1, -1), 0),
                         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                         ("TOPPADDING", (0, 0), (-1, -1), 1),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
                     ]
                 )
             )
@@ -461,51 +448,29 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                             Paragraph(f"&bull;&nbsp;&nbsp;{bullet_text}", bullet_style)
                         )
 
-            exp_elements.append(Spacer(1, 4))
-            # Keep company header with at least its first bullet point
-            if len(exp_elements) > 2:
-                story.append(KeepTogether(exp_elements[:2]))
-                for remaining_elem in exp_elements[2:]:
+            exp_elements.append(Spacer(1, 5))
+
+            # Keep company header with at least its first bullet point.
+            # Allow remaining bullets to flow naturally across page boundaries when necessary.
+            keep_chunk = exp_elements[:2]
+            flow_chunk = exp_elements[2:]
+
+            if first_exp:
+                story.append(KeepTogether(exp_header + keep_chunk))
+                for remaining_elem in flow_chunk:
                     story.append(remaining_elem)
+                first_exp = False
             else:
-                story.append(KeepTogether(exp_elements))
+                story.append(KeepTogether(keep_chunk))
+                for remaining_elem in flow_chunk:
+                    story.append(remaining_elem)
 
-    # Calculate content volume and Page 1 accumulated content to determine balanced pagination
-    base_p1_chars = (
-        len(resume.contact_info.name or "")
-        + len(resume.summary or "")
-        + sum(len(s) for s in (resume.skills.retained_relevant + resume.skills.retained_other))
-        + sum(len(b.tailored_text) for exp in resume.experience for b in exp.bullets)
-        + sum(len(exp.role) + len(exp.company or "") for exp in resume.experience)
-    )
-
-    total_content_chars = (
-        base_p1_chars
-        + sum(len(p.description) + len(p.name or "") for p in (resume.projects or []))
-        + sum(len(e.degree) + len(e.institution) for e in (resume.education or []))
-        + sum(len(a) for a in (getattr(resume, "achievements", None) or []))
-        + sum(len(c) for c in (getattr(resume, "certifications", None) or []))
-    )
-
-    is_multipage = (
-        total_content_chars > 2000
-        and len(resume.experience) > 0
-        and (len(resume.projects or []) > 0 or len(resume.education or []) > 0)
-    )
-
-    # If Experience alone fills Page 1 comfortably (>= 1650 chars) or there are no projects,
-    # insert page break here. Otherwise, allow Key Projects to start on Page 1 to avoid empty voids.
-    page_has_broken = False
-    if is_multipage and (base_p1_chars >= 1650 or not resume.projects):
-        story.append(PageBreak())
-        page_has_broken = True
-
-    # 5. Projects (Optional)
+    # 5. Key Projects (Optional)
     if resume.projects:
-        add_section_divider("Key Projects")
-        accumulated_chars = base_p1_chars
+        proj_header = make_section_header("Key Projects")
+        first_proj = True
 
-        for idx, proj in enumerate(resume.projects):
+        for proj in resume.projects:
             proj_elements = []
             name_text = _sanitize_and_escape(proj.name) if proj.name and proj.name.lower() != "project" else ""
             desc_text = proj.description
@@ -521,42 +486,37 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                 url_str = f" ({clean_url})"
 
             if name_text:
-                proj_header = f"<b>{name_text}</b>{url_str}{tech_str}"
-                proj_elements.append(Paragraph(proj_header, entry_title_style))
+                proj_header_text = f"<b>{name_text}</b>{url_str}{tech_str}"
+                proj_elements.append(Paragraph(proj_header_text, entry_title_style))
 
             # Split multi-bullet descriptions cleanly
             for line in desc_text.splitlines():
                 line_clean = _clean_bullet_text(line.strip())
                 if line_clean:
                     proj_elements.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(line_clean)}", bullet_style))
-            proj_elements.append(Spacer(1, 3))
-            story.append(KeepTogether(proj_elements))
 
-            accumulated_chars += len(proj.description) + len(proj.name or "")
-            # If multi-page and we haven't broken yet, break when Page 1 reaches balanced capacity (~1,650+ content chars)
-            # and there are remaining projects to continue seamlessly on Page 2
-            if (
-                is_multipage
-                and not page_has_broken
-                and accumulated_chars >= 1650
-                and idx < len(resume.projects) - 1
-            ):
-                story.append(PageBreak())
-                add_section_divider("Key Projects (Continued)")
-                page_has_broken = True
+            proj_elements.append(Spacer(1, 5))
 
-    # If multi-page and page has not broken yet before Education/Achievements/Certifications
-    if (
-        is_multipage
-        and not page_has_broken
-        and (resume.education or getattr(resume, "achievements", None) or getattr(resume, "certifications", None))
-    ):
-        story.append(PageBreak())
-        page_has_broken = True
+            # Keep project heading with at least its first bullet point.
+            # Allow remaining bullets to flow naturally so projects split between bullets when necessary
+            # without forcing the entire project onto the next page when only part of it needs to move.
+            keep_chunk = proj_elements[:2]
+            flow_chunk = proj_elements[2:]
+
+            if first_proj:
+                story.append(KeepTogether(proj_header + keep_chunk))
+                for rem in flow_chunk:
+                    story.append(rem)
+                first_proj = False
+            else:
+                story.append(KeepTogether(keep_chunk))
+                for rem in flow_chunk:
+                    story.append(rem)
 
     # 6. Education (Optional)
     if resume.education:
-        add_section_divider("Education")
+        edu_header = make_section_header("Education")
+        first_edu = True
 
         for edu in resume.education:
             deg_text = _sanitize_and_escape(edu.degree)
@@ -596,30 +556,47 @@ def generate_resume_pdf(resume: TailoredResume) -> bytes:
                 details_text = _sanitize_and_escape(edu.details)
                 edu_elements.append(Paragraph(details_text, entry_subtitle_style))
 
-            edu_elements.append(Spacer(1, 3))
-            story.append(KeepTogether(edu_elements))
+            edu_elements.append(Spacer(1, 4))
+
+            if first_edu:
+                story.append(KeepTogether(edu_header + edu_elements))
+                first_edu = False
+            else:
+                story.append(KeepTogether(edu_elements))
 
     # 7. Achievements (Optional)
     achievements = getattr(resume, "achievements", None)
     if achievements:
-        add_section_divider("Achievements")
+        ach_header = make_section_header("Achievements")
+        ach_elements = []
         for ach in achievements:
             ach_clean = _clean_bullet_text(ach.strip())
             if ach_clean:
-                story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(ach_clean)}", bullet_style))
-        story.append(Spacer(1, 3))
+                ach_elements.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(ach_clean)}", bullet_style))
+        ach_elements.append(Spacer(1, 4))
+
+        if ach_elements:
+            story.append(KeepTogether(ach_header + ach_elements[:1]))
+            for rem in ach_elements[1:]:
+                story.append(rem)
 
     # 8. Certifications (Optional)
     certifications = getattr(resume, "certifications", None)
     if certifications:
-        add_section_divider("Certifications")
+        cert_header = make_section_header("Certifications")
+        cert_elements = []
         for cert in certifications:
             cert_clean = _clean_bullet_text(cert.strip())
             if cert_clean:
-                story.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(cert_clean)}", bullet_style))
-        story.append(Spacer(1, 3))
+                cert_elements.append(Paragraph(f"&bull;&nbsp;&nbsp;{_sanitize_and_escape(cert_clean)}", bullet_style))
+        cert_elements.append(Spacer(1, 4))
 
-    # Build PDF with multi-page NumberedCanvas
+        if cert_elements:
+            story.append(KeepTogether(cert_header + cert_elements[:1]))
+            for rem in cert_elements[1:]:
+                story.append(rem)
+
+    # Build PDF on A4 (clean ATS layout with zero footers or page numbers)
     doc.build(story, canvasmaker=NumberedCanvas)
     return buffer.getvalue()
 
