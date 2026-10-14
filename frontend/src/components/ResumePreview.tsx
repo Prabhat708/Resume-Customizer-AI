@@ -8,6 +8,16 @@ interface ResumePreviewProps {
   resume: TailoredResume;
 }
 
+function normalizeTechNames(text?: string | null): string {
+  if (!text) return "";
+  return text
+    .replace(/\bASP\.\s+NET\b/gi, "ASP.NET")
+    .replace(/\bReact\.\s+js\b/gi, "React.js")
+    .replace(/\bNode\.\s+js\b/gi, "Node.js")
+    .replace(/\bVue\.\s+js\b/gi, "Vue.js")
+    .replace(/\bNext\.\s+js\b/gi, "Next.js");
+}
+
 export function ResumePreview({ resume }: ResumePreviewProps) {
   const { contact_info, summary, skills, experience, education, projects, achievements, certifications } = resume;
 
@@ -23,40 +33,10 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
     (achievements?.reduce((acc, a) => acc + a.length, 0) || 0) +
     (certifications?.reduce((acc, c) => acc + c.length, 0) || 0);
 
-  const baseP1Chars =
-    (contact_info.name?.length || 0) +
-    (summary?.length || 0) +
-    skills.retained_relevant.reduce((acc, s) => acc + s.length, 0) +
-    skills.retained_other.reduce((acc, s) => acc + s.length, 0) +
-    experience.reduce(
-      (acc, exp) =>
-        acc +
-        exp.bullets.reduce((bAcc, b) => bAcc + b.tailored_text.length, 0) +
-        exp.role.length +
-        (exp.company?.length || 0),
-      0
-    );
-
   const isMultiPage =
     totalContentChars > 2000 &&
     experience.length > 0 &&
     ((projects && projects.length > 0) || (education && education.length > 0));
-
-  // Balanced project distribution: if experience alone did not fill Sheet 1 (< 1650 chars),
-  // place initial project(s) on Sheet 1 to avoid empty voids and balance the sheets.
-  const splitProjectIndex = React.useMemo(() => {
-    if (!isMultiPage || !projects || projects.length <= 1 || baseP1Chars >= 1650) {
-      return 0;
-    }
-    let acc = baseP1Chars;
-    for (let i = 0; i < projects.length; i++) {
-      acc += projects[i].description.length + (projects[i].name?.length || 0);
-      if (acc >= 1650 && i < projects.length - 1) {
-        return i + 1; // Projects [0..i] on Sheet 1; [i+1..] continue on Sheet 2
-      }
-    }
-    return 0;
-  }, [isMultiPage, projects, baseP1Chars]);
 
   // 1. Header / Contact Info Component
   const renderHeader = () => (
@@ -110,7 +90,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
           <span>Professional Summary</span>
         </h3>
         <p className="resume-entry-body text-xs sm:text-sm print:text-[10.5px] print:leading-[14.5px] text-slate-700 leading-relaxed bg-slate-50/70 p-3 print:p-1.5 rounded-lg border border-slate-100">
-          {summary}
+          {normalizeTechNames(summary)}
         </p>
       </section>
     ) : null;
@@ -136,7 +116,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
                     key={idx}
                     className="resume-tag px-2 py-0.5 print:px-1 print:py-0 text-xs print:text-[9.5px] font-medium bg-indigo-50 text-indigo-800 rounded-md border border-indigo-200"
                   >
-                    {skill}
+                    {normalizeTechNames(skill)}
                   </span>
                 ))}
               </div>
@@ -154,7 +134,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
                     key={idx}
                     className="resume-tag px-2 py-0.5 print:px-1 print:py-0 text-xs print:text-[9.5px] text-slate-700 bg-slate-100 rounded-md border border-slate-200"
                   >
-                    {skill}
+                    {normalizeTechNames(skill)}
                   </span>
                 ))}
               </div>
@@ -198,7 +178,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
                   <ul className="resume-bullet-list list-disc list-outside pl-4 space-y-1 print:space-y-0.5 mt-1 print:mt-0.5 text-xs sm:text-sm print:text-[10.5px] text-slate-700">
                     {entry.bullets.map((bullet, bIdx) => (
                       <li key={bIdx} className="resume-bullet-text leading-relaxed print:leading-[14.5px] pl-1">
-                        {bullet.tailored_text}
+                        {normalizeTechNames(bullet.tailored_text)}
                       </li>
                     ))}
                   </ul>
@@ -244,18 +224,18 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
                   <ul className="resume-bullet-list list-disc list-outside pl-4 space-y-1 print:space-y-0.5 text-slate-700">
                     {descLines.map((line, lIdx) => (
                       <li key={lIdx} className="resume-bullet-text leading-relaxed print:leading-[14px] pl-1">
-                        {line.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, "")}
+                        {normalizeTechNames(line.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, ""))}
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="resume-entry-body text-slate-700 leading-relaxed print:leading-[14px]">{proj.description}</p>
+                  <p className="resume-entry-body text-slate-700 leading-relaxed print:leading-[14px]">{normalizeTechNames(proj.description)}</p>
                 )}
                 {proj.technologies && proj.technologies.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-0.5 print:pt-0">
                     {proj.technologies.map((t, tIdx) => (
                       <span key={tIdx} className="resume-tag px-1.5 py-0.5 print:px-1 print:py-0 text-[10px] print:text-[9px] bg-slate-100 text-slate-600 rounded">
-                        {t}
+                        {normalizeTechNames(t)}
                       </span>
                     ))}
                   </div>
@@ -308,7 +288,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
         <ul className="resume-bullet-list list-disc list-outside pl-4 space-y-1 print:space-y-0.5 text-xs sm:text-sm print:text-[10.5px] text-slate-700">
           {achievements.map((ach, idx) => (
             <li key={idx} className="resume-bullet-text leading-relaxed print:leading-[14px] pl-1 break-inside-avoid">
-              {ach.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, "")}
+              {normalizeTechNames(ach.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, ""))}
             </li>
           ))}
         </ul>
@@ -326,7 +306,7 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
         <ul className="resume-bullet-list list-disc list-outside pl-4 space-y-1 print:space-y-0.5 text-xs sm:text-sm print:text-[10.5px] text-slate-700">
           {certifications.map((cert, idx) => (
             <li key={idx} className="resume-bullet-text leading-relaxed print:leading-[14px] pl-1 break-inside-avoid">
-              {cert.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, "")}
+              {normalizeTechNames(cert.replace(/^[\s•*–—◦\u25e6\u2022\u25aa\u25cf\u25cb\u25b8\u27a4\u2713\u2714\u2043\u2219]+|^\s*\(?\d+[\.\)]\s*/, ""))}
             </li>
           ))}
         </ul>
@@ -342,24 +322,19 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
           <span>{isMultiPage ? "2 Pages (Synchronized with PDF Export)" : "1 Page"}</span>
         </div>
         <span className="text-[11px] text-indigo-700 bg-white/90 px-2 py-0.5 rounded border border-indigo-200 font-medium">
-          All sections &amp; accomplishments preserved
+          Clean ATS layout &bull; Zero footers
         </span>
       </div>
 
       {isMultiPage ? (
         <>
-          {/* Page 1: Header, Summary, Skills, Experience, plus balanced initial Projects */}
+          {/* Page 1: Header, Summary, Skills, Experience, Key Projects */}
           <article className="resume-sheet bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 max-w-4xl mx-auto font-sans text-slate-800 leading-normal print-page-1 print:p-0 print:border-none print:shadow-none print:max-w-none">
             {renderHeader()}
             {renderSummary()}
             {renderSkills()}
             {renderExperience()}
-            {splitProjectIndex > 0 && projects && renderProjects(projects.slice(0, splitProjectIndex), "Key Projects")}
-
-            <div className="resume-footer mt-6 print:mt-2 pt-3 print:pt-1 border-t border-slate-100 flex items-center justify-between text-[11px] print:text-[9.5px] text-slate-400">
-              <span>{contact_info.name} • Tailored Resume</span>
-              <span>Page 1 of 2</span>
-            </div>
+            {renderProjects()}
           </article>
 
           {/* Visual Page Break Separator (Screen Only) */}
@@ -371,19 +346,11 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
             <div className="h-px bg-slate-200 flex-1"></div>
           </div>
 
-          {/* Page 2: Projects (Continued if split), Education, Achievements, Certifications */}
+          {/* Page 2: Education, Achievements, Certifications */}
           <article className="resume-sheet bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 max-w-4xl mx-auto font-sans text-slate-800 leading-normal print-page-2 print:p-0 print:border-none print:shadow-none print:max-w-none">
-            {splitProjectIndex > 0 && projects
-              ? renderProjects(projects.slice(splitProjectIndex), "Key Projects (Continued)")
-              : renderProjects()}
             {renderEducation()}
             {renderAchievements()}
             {renderCertifications()}
-
-            <div className="resume-footer mt-6 print:mt-2 pt-3 print:pt-1 border-t border-slate-100 flex items-center justify-between text-[11px] print:text-[9.5px] text-slate-400">
-              <span>{contact_info.name} • Tailored Resume</span>
-              <span>Page 2 of 2</span>
-            </div>
           </article>
         </>
       ) : (
@@ -397,13 +364,9 @@ export function ResumePreview({ resume }: ResumePreviewProps) {
           {renderEducation()}
           {renderAchievements()}
           {renderCertifications()}
-
-          <div className="resume-footer mt-6 print:mt-2 pt-3 print:pt-1 border-t border-slate-100 flex items-center justify-between text-[11px] print:text-[9.5px] text-slate-400">
-            <span>{contact_info.name} • Tailored Resume</span>
-            <span>Page 1 of 1</span>
-          </div>
         </article>
       )}
     </div>
   );
 }
+

@@ -83,7 +83,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
   return (
     <div className="space-y-6">
       {/* 1. Top Match Score Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+      <div className="break-inside-avoid bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
           <div>
             <div className="flex items-center space-x-2">
@@ -196,7 +196,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
       </div>
 
       {/* 2. Evidence Reconciliation & Workplace Calibration Card */}
-      <div className="bg-indigo-50/60 rounded-xl border border-indigo-200 p-5 shadow-xs space-y-3">
+      <div className="break-inside-avoid bg-indigo-50/60 rounded-xl border border-indigo-200 p-5 shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center space-x-2">
             <ShieldAlert className="h-4 w-4 text-indigo-700 shrink-0" />
@@ -308,7 +308,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
               return (
                 <div
                   key={idx}
-                  className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs transition-all hover:border-slate-300"
+                  className="break-inside-avoid bg-white rounded-xl border border-slate-200 p-4 shadow-xs transition-all hover:border-slate-300"
                 >
                   <div
                     className="flex items-start justify-between gap-3 cursor-pointer"
@@ -440,7 +440,7 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
             {missingReqs.map((miss: MissingRequirement, idx: number) => (
               <div
                 key={idx}
-                className="bg-amber-50/50 rounded-xl border border-amber-200 p-4 text-xs space-y-1.5 shadow-xs"
+                className="break-inside-avoid bg-amber-50/50 rounded-xl border border-amber-200 p-4 text-xs space-y-1.5 shadow-xs"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-slate-900">{miss.requirement}</span>
@@ -455,6 +455,9 @@ export function MatchAnalysisCard({ analysis }: MatchAnalysisCardProps) {
                   </span>
                 </div>
                 <p className="text-amber-800 leading-relaxed">{miss.guidance}</p>
+                <p className="text-[10.5px] text-amber-700/90 italic pt-1 border-t border-amber-200/60">
+                  * Zero-weight informational guidance: Evaluated to provide actionable feedback without double-penalizing score arithmetic for individual technical competencies assessed above.
+                </p>
               </div>
             ))}
           </div>

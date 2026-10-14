@@ -759,8 +759,7 @@ def test_browser_print_pagination_letter_and_a4(tmp_path):
         </div>
         """
 
-    proj1_html = "".join([render_proj(p) for p in parsed.projects[:1]])
-    proj2_html = "".join([render_proj(p) for p in parsed.projects[1:]])
+    proj_all_html = "".join([render_proj(p) for p in parsed.projects])
 
     edu_html = ""
     for ed in parsed.education:
@@ -789,7 +788,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helv
 @media print {{
   @page {{ size: {page_size}; margin: 0.35in 0.4in; }}
   body {{ background: #ffffff !important; color: #0f172a !important; }}
-  header:not(.resume-header), footer:not(.resume-footer), nav, button, .no-print {{ display: none !important; }}
+  header:not(.resume-header), nav, button, .no-print {{ display: none !important; }}
   .resume-header, header.resume-header {{ display: block !important; }}
   .print-page-1 {{ break-after: page !important; page-break-after: always !important; }}
   .print-page-2 {{ break-after: auto !important; page-break-after: auto !important; }}
@@ -803,7 +802,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helv
   .resume-bullet-list li {{ margin-bottom: 0.125rem !important; }}
   .resume-project-item {{ margin-bottom: 0.35rem !important; }}
   .resume-tag {{ font-size: 0.5625rem !important; padding: 0.05rem 0.25rem !important; line-height: 0.85rem !important; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 3px; display: inline-block; color: #475569; }}
-  .resume-footer {{ margin-top: 0.35rem !important; padding-top: 0.2rem !important; border-top: 1px solid #f1f5f9; font-size: 0.6rem; color: #94a3b8; display: flex; justify-content: space-between; }}
 }}
 </style>
 </head>
@@ -839,18 +837,10 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helv
   </section>
   <section class="resume-section">
     <div class="resume-section-heading">Key Projects</div>
-    {proj1_html}
+    {proj_all_html}
   </section>
-  <div class="resume-footer">
-    <span>{contact.name} &bull; Tailored Resume</span>
-    <span>Page 1 of 2</span>
-  </div>
 </article>
 <article class="resume-sheet print-page-2">
-  <section class="resume-section">
-    <div class="resume-section-heading">Key Projects (Continued)</div>
-    {proj2_html}
-  </section>
   <section class="resume-section">
     <div class="resume-section-heading">Education</div>
     {edu_html}
@@ -863,10 +853,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helv
     <div class="resume-section-heading">Certifications</div>
     <ul class="resume-bullet-list" style="list-style-type: disc;">{cert_html}</ul>
   </section>
-  <div class="resume-footer">
-    <span>{contact.name} &bull; Tailored Resume</span>
-    <span>Page 2 of 2</span>
-  </div>
 </article>
 </body>
 </html>"""
@@ -888,21 +874,23 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helv
         # Page 1 checks
         p1_text = doc[0].get_text()
         assert "Prabhat Verma" in p1_text
-        assert "Page 1 of 2" in p1_text
         assert "PROFESSIONAL SUMMARY" in p1_text
         assert "PROFESSIONAL EXPERIENCE" in p1_text
         assert "Chandrakala Universal" in p1_text
         assert "KEY PROJECTS" in p1_text
         assert "PyBgWorker" in p1_text
+        assert "Page 1 of 2" not in p1_text
+        assert "Tailored Resume" not in p1_text
 
         # Page 2 checks
         p2_text = doc[1].get_text()
-        assert "KEY PROJECTS" in p2_text
-        assert "Financial Services Applications" in p2_text
         assert "EDUCATION" in p2_text
+        assert "AKTU" in p2_text
         assert "ACHIEVEMENTS" in p2_text
         assert "CERTIFICATIONS" in p2_text
-        assert "Page 2 of 2" in p2_text
+        assert "160 Days of DSA" in p2_text
+        assert "Page 2 of 2" not in p2_text
+        assert "Tailored Resume" not in p2_text
 
         doc.close()
 

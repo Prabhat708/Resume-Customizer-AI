@@ -64,3 +64,6 @@ Thumbs.db
 # ─── Planning & Docs ──────────────────────────────────────────────────────────
 plan/
 PHASE-6-AUDIT.md
+final_release_artifacts/
+scratch_*
+*.png

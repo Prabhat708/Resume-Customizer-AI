@@ -156,19 +156,32 @@ _CHAR_REPLACEMENTS = {
 }
 
 
+def normalize_technology_names(text: Optional[str]) -> Optional[str]:
+    """Normalize corrupted dot-spacing in technology names (e.g. 'React. js' -> 'React.js', 'ASP. NET' -> 'ASP.NET')."""
+    if not text:
+        return text
+    text = re.sub(r"\bASP\.\s+NET\b", "ASP.NET", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bReact\.\s+js\b", "React.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bNode\.\s+js\b", "Node.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bVue\.\s+js\b", "Vue.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bNext\.\s+js\b", "Next.js", text, flags=re.IGNORECASE)
+    return text
+
+
 def _sanitize_and_escape(text: Optional[str]) -> str:
     """
     Safely sanitizes and escapes raw user text for ReportLab Paragraphs.
     
-    1. Replaces common typographical punctuation entities with clean equivalents.
-    2. If TrueType Unicode fonts are available, preserves international Unicode characters.
-    3. If running under Type-1 Helvetica fallback, normalizes characters to latin-1 / ascii.
-    4. Escapes XML special characters (<, >, &).
+    1. Normalizes technology names (e.g. ASP.NET, React.js, Node.js).
+    2. Replaces common typographical punctuation entities with clean equivalents.
+    3. If TrueType Unicode fonts are available, preserves international Unicode characters.
+    4. If running under Type-1 Helvetica fallback, normalizes characters to latin-1 / ascii.
+    5. Escapes XML special characters (<, >, &).
     """
     if not text:
         return ""
 
-    s = str(text)
+    s = normalize_technology_names(str(text))
     for src, target in _CHAR_REPLACEMENTS.items():
         s = s.replace(src, target)
 

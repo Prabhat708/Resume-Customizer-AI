@@ -35,6 +35,18 @@ METRIC_PATTERNS = [
 ]
 
 
+def normalize_technology_names(text: Optional[str]) -> Optional[str]:
+    """Normalize corrupted dot-spacing in technology names (e.g. 'React. js' -> 'React.js', 'ASP. NET' -> 'ASP.NET')."""
+    if not text:
+        return text
+    text = re.sub(r"\bASP\.\s+NET\b", "ASP.NET", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bReact\.\s+js\b", "React.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bNode\.\s+js\b", "Node.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bVue\.\s+js\b", "Vue.js", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bNext\.\s+js\b", "Next.js", text, flags=re.IGNORECASE)
+    return text
+
+
 def sanitize_summary_factuality(summary: Optional[str]) -> Optional[str]:
     """Ensure summary preserves strict factual boundaries between employment and projects.
 
@@ -72,7 +84,9 @@ def sanitize_summary_factuality(summary: Optional[str]) -> Optional[str]:
     # Pattern 3: If 100+ production REST APIs is mentioned without mentioning ASP.NET or employment context
     # but MySQL/MongoDB is present in the same sentence
     if "100+" in cleaned and "REST API" in cleaned.upper():
-        sentences = [s.strip() for s in cleaned.split(".") if s.strip()]
+        # Split on sentence boundaries (.!? followed by whitespace and uppercase/digit)
+        # to prevent splitting technology names like ASP.NET, React.js, Node.js
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", cleaned) if s.strip()]
         new_sentences = []
         for s in sentences:
             if "100+" in s and "REST API" in s.upper():
@@ -90,11 +104,9 @@ def sanitize_summary_factuality(summary: Optional[str]) -> Optional[str]:
                         flags=re.IGNORECASE,
                     )
             new_sentences.append(s)
-        cleaned = ". ".join(new_sentences)
-        if not cleaned.endswith("."):
-            cleaned += "."
+        cleaned = " ".join(s if s.endswith((".", "!", "?")) else f"{s}." for s in new_sentences)
 
-    return cleaned
+    return normalize_technology_names(cleaned)
 
 
 def extract_metrics(text: str) -> List[str]:
@@ -141,8 +153,8 @@ def audit_and_build_tailored_resume(
     ]
 
     tailored_skills = TailoredSkills(
-        retained_relevant=retained_relevant,
-        retained_other=retained_other,
+        retained_relevant=[normalize_technology_names(s) for s in retained_relevant if s],
+        retained_other=[normalize_technology_names(s) for s in retained_other if s],
     )
 
     # 2. Experience Provenance & Metric Auditing
@@ -192,7 +204,8 @@ def audit_and_build_tailored_resume(
         has_valid_source_ids = bool(
             model_bullets
             and any(
-                isinstance(b.get("source_bullet_id"), int)
+                isinstance(b, dict)
+                and isinstance(b.get("source_bullet_id"), int)
                 and b.get("source_bullet_id") in orig_bullet_by_id
                 for b in model_bullets
             )
@@ -200,12 +213,14 @@ def audit_and_build_tailored_resume(
 
         if has_valid_source_ids:
             for mb in model_bullets:
+                if not isinstance(mb, dict):
+                    continue
                 sid = mb.get("source_bullet_id")
                 if isinstance(sid, int) and sid in orig_bullet_by_id:
                     orig_b = orig_bullet_by_id[sid]
                     used_sids.add(sid)
                     orig_text = orig_b.text
-                    tailored_text = mb.get("tailored_text", orig_text).strip()
+                    tailored_text = normalize_technology_names(mb.get("tailored_text", orig_text).strip())
                     rationale = mb.get("rationale", "Reframed to emphasize target qualifications.")
 
                     tailored_metrics = extract_metrics(tailored_text)
@@ -251,8 +266,12 @@ def audit_and_build_tailored_resume(
                 m_bullet = model_bullets[b_idx] if b_idx < len(model_bullets) else None
 
                 if m_bullet is not None:
-                    tailored_text = m_bullet.get("tailored_text", orig_text).strip()
-                    rationale = m_bullet.get("rationale", "Reframed to emphasize target qualifications.")
+                    if isinstance(m_bullet, dict):
+                        tailored_text = normalize_technology_names(m_bullet.get("tailored_text", orig_text).strip())
+                        rationale = m_bullet.get("rationale", "Reframed to emphasize target qualifications.")
+                    else:
+                        tailored_text = normalize_technology_names(str(m_bullet).strip())
+                        rationale = "Reframed to emphasize target qualifications."
                 else:
                     tailored_text = orig_text
                     rationale = "Retained original achievement."

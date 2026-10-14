@@ -27,7 +27,7 @@ body {
 
 @media print {
   @page {
-    size: letter;
+    size: a4;
     margin: 0.35in 0.4in;
   }
 

@@ -23,6 +23,16 @@ import {
   MissingRequirement,
 } from "@/types/api";
 
+function normalizeTechNames(text?: string | null): string {
+  if (!text) return "";
+  return text
+    .replace(/\bASP\.\s+NET\b/gi, "ASP.NET")
+    .replace(/\bReact\.\s+js\b/gi, "React.js")
+    .replace(/\bNode\.\s+js\b/gi, "Node.js")
+    .replace(/\bVue\.\s+js\b/gi, "Vue.js")
+    .replace(/\bNext\.\s+js\b/gi, "Next.js");
+}
+
 interface DiffViewProps {
   resume?: TailoredResume;
   tailoredResume?: TailoredResume;
@@ -180,7 +190,7 @@ export function DiffView({
   return (
     <div className="space-y-6">
       {/* 1. Factuality & Provenance Overview Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+      <div className="break-inside-avoid bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
@@ -282,7 +292,7 @@ export function DiffView({
 
       {/* 2. Audit Warnings Banner */}
       {auditWarnings.length > 0 && (
-        <div className="bg-amber-50/90 rounded-xl border border-amber-300 p-5 shadow-xs space-y-3">
+        <div className="break-inside-avoid bg-amber-50/90 rounded-xl border border-amber-300 p-5 shadow-xs space-y-3">
           <div className="flex items-center space-x-2 text-amber-950">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
             <h4 className="text-sm font-bold">
@@ -321,7 +331,7 @@ export function DiffView({
 
       {/* 3. Professional Summary Diff (if either original or tailored exists) */}
       {hasSummaryDiff && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+        <div className="break-inside-avoid bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
               <FileText className="h-4 w-4 text-indigo-600" />
@@ -356,7 +366,7 @@ export function DiffView({
                 <span>Tailored Summary</span>
               </span>
               <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[50px]">
-                {tailoredSummary || <em className="text-slate-400">None specified</em>}
+                {normalizeTechNames(tailoredSummary) || <em className="text-slate-400">None specified</em>}
               </div>
             </div>
           </div>
@@ -365,7 +375,7 @@ export function DiffView({
 
       {/* 4. Skills Categorization & Retention */}
       {(relevantSkills.length > 0 || otherSkills.length > 0 || originalSkills.length > 0) && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
+        <div className="break-inside-avoid bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
           <h4 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
             <Layers className="h-4 w-4 text-indigo-600" />
             <span>Skills Partitioning &amp; Relevance Alignment</span>
@@ -432,7 +442,7 @@ export function DiffView({
 
       {/* 5. Unsupported Job Requirements Alert */}
       {missingRequirements.length > 0 && (
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs space-y-2">
+        <div className="break-inside-avoid bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs space-y-2">
           <div className="flex items-center space-x-2 text-slate-800 font-bold">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
             <span>Job Requirements Not Supported in Source Resume ({missingRequirements.length})</span>
@@ -535,7 +545,7 @@ export function DiffView({
             return (
               <div
                 key={idx}
-                className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all hover:border-slate-300"
+                className="break-inside-avoid bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all hover:border-slate-300"
               >
                 {/* Header with Provenance */}
                 <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs gap-2">
@@ -593,7 +603,7 @@ export function DiffView({
                       <span>Customized Bullet (Position #{currentIndex + 1})</span>
                     </span>
                     <div className="p-3 bg-indigo-50/40 rounded-lg text-indigo-950 border border-indigo-200 leading-relaxed min-h-[60px]">
-                      {bullet.tailored_text}
+                      {normalizeTechNames(bullet.tailored_text)}
                     </div>
                   </div>
                 </div>
@@ -603,7 +613,7 @@ export function DiffView({
                   <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 text-xs text-slate-600 flex items-start space-x-2">
                     <ArrowRight className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
                     <span>
-                      <strong className="text-slate-700">Rationale:</strong> {bullet.rationale}
+                      <strong className="text-slate-700">Rationale:</strong> {normalizeTechNames(bullet.rationale)}
                     </span>
                   </div>
                 )}
@@ -614,7 +624,7 @@ export function DiffView({
 
         {/* 7. Omitted Original Bullets (if any original bullets were not carried over) */}
         {omittedBullets.length > 0 && (
-          <div className="mt-6 bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-3">
+          <div className="break-inside-avoid mt-6 bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-3">
             <div className="flex items-center space-x-2 text-slate-800">
               <MinusCircle className="h-4 w-4 text-slate-500" />
               <h4 className="text-sm font-bold">
@@ -629,7 +639,7 @@ export function DiffView({
               {omittedBullets.map((ob, idx) => (
                 <div
                   key={idx}
-                  className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 space-y-1"
+                  className="break-inside-avoid bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 space-y-1"
                 >
                   <div className="font-semibold text-slate-600 text-[11px]">
                     {ob.company} &bull; {ob.role} &bull; Original Position #{ob.originalIndex + 1}
